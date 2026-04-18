@@ -1,0 +1,13 @@
+fyers-apiv3>=3.1.0
+typer>=0.12.0
+rich>=13.0.0
+cryptography>=41.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+schedule>=1.2.0
+python-dateutil>=2.8.0
+selenium>=4.0.0
+webdriver-manager>=4.0.0
+
+# Optional: For creating demo GIFs
+moviepy>=1.0.0

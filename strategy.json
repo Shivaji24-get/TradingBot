@@ -1,0 +1,19 @@
+{
+  "name": "RSI Momentum",
+  "description": "Buy when RSI < 30, Sell when RSI > 70",
+  "indicators": {
+    "rsi": {"period": 14, "oversold": 30, "overbought": 70},
+    "sma": {"period": 20},
+    "volume": {"threshold": 100000}
+  },
+  "entry": {
+    "rsi_less_than": 30,
+    "volume_greater_than": 100000
+  },
+  "exit": {
+    "rsi_greater_than": 70
+  },
+  "symbols": ["NSE:SBIN-EQ", "NSE:RELIANCE-EQ", "NSE:INFY-EQ"],
+  "timeframe": "D",
+  "limit": 30
+}
