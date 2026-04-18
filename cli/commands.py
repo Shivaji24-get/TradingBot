@@ -212,8 +212,11 @@ def scan_cmd(
     symbols: str = typer.Option(None, "--symbols", help="Comma-separated symbols (e.g., NSE:SBIN-EQ,NSE:RELIANCE-EQ)"),
     index: str = typer.Option(None, "--index", help="Index group (NIFTY50, BANKNIFTY, SENSEX)"),
     timeframe: str = typer.Option(None, "--timeframe", help="Timeframe (D, 5m, 1h)"),
+    htf: str = typer.Option(None, "--htf", help="Higher timeframe for HTF bias (e.g., 15m, 1h). Auto if not specified."),
     limit: int = typer.Option(None, "--limit", help="Number of candles"),
     live: bool = typer.Option(False, "--live", help="Enable live real-time scanning"),
+    smc: bool = typer.Option(False, "--smc", help="Use Smart Money Concepts strategy (HTF+LTF alignment, FVG, OB, MSS, Liquidity)"),
+    min_score: int = typer.Option(50, "--min-score", help="Minimum SMC score to display (0-100, default: 50)"),
     interval: int = typer.Option(5, "--interval", help="Polling interval in seconds (live mode only, min: 3)"),
     auto_trade: bool = typer.Option(False, "--auto-trade", help="Auto-place orders for high-confidence signals (live mode only)"),
     threshold: int = typer.Option(75, "--threshold", help="Minimum score threshold for auto-trading (0-100)"),
@@ -257,30 +260,76 @@ def scan_cmd(
 
     if live:
         # Live mode: Continuous real-time scanning
-        from strategies import LiveEngine
-
         if not scan_symbols:
             console.print("[red]Error: --symbol, --symbols, or --index required for live mode[/red]")
             raise typer.Exit(1)
-
-        scanner = StockScanner(enable_patterns=True)
-        engine = LiveEngine(client.get_client(), scanner, interval=interval, auto_trade=auto_trade, threshold=threshold)
-        engine.start(scan_symbols)
+        
+        if smc:
+            # Live SMC Mode - Smart Money Concepts with real-time updates
+            from strategies import LiveSMCEngine
+            
+            ltf_timeframe = timeframe or "5m"
+            htf_timeframe = htf
+            
+            scanner = StockScanner(enable_smc=True)
+            engine = LiveSMCEngine(
+                client.get_client(),
+                scanner,
+                interval=interval,
+                auto_trade=auto_trade,
+                threshold=threshold,
+                ltf_timeframe=ltf_timeframe,
+                htf_timeframe=htf_timeframe
+            )
+            engine.start(scan_symbols)
+        else:
+            # Standard Live Mode
+            from strategies import LiveEngine
+            
+            scanner = StockScanner(enable_patterns=True)
+            engine = LiveEngine(client.get_client(), scanner, interval=interval, auto_trade=auto_trade, threshold=threshold)
+            engine.start(scan_symbols)
         return  # Exit after live mode - results table not needed for live
     else:
         # Historical mode: One-time scan
-        scanner = StockScanner(enable_patterns=True, enable_scoring=True)
-        results = scanner.scan_all(client.get_client(), scan_symbols, timeframe, limit)
+        if smc:
+            # Smart Money Concepts scan
+            ltf_timeframe = timeframe or "5m"
+            htf_timeframe = htf
+            
+            scanner = StockScanner(enable_smc=True)
+            results = scanner.scan_all_smc(
+                client.get_client(), 
+                scan_symbols, 
+                ltf_timeframe=ltf_timeframe,
+                htf_timeframe=htf_timeframe,
+                ltf_limit=limit or 100,
+                htf_limit=50,
+                min_score=min_score  # Use CLI parameter (default: 50)
+            )
+            
+            # Display SMC results
+            _display_smc_results(results, top)
+        else:
+            # Standard scan
+            scanner = StockScanner(enable_patterns=True, enable_scoring=True)
+            results = scanner.scan_all(client.get_client(), scan_symbols, timeframe, limit)
 
-        # Sort by score (descending) and take top N
-        results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)
-        if top and len(results) > top:
-            results = results[:top]
+            # Sort by score (descending) and take top N
+            results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)
+            if top and len(results) > top:
+                results = results[:top]
 
-        if not results:
-            console.print("[yellow]No signals found[/yellow]")
-            return
-    
+            if not results:
+                console.print("[yellow]No signals found[/yellow]")
+                return
+            
+            # Display standard results
+            _display_standard_results(results, top)
+
+
+def _display_standard_results(results: list, top: int):
+    """Display standard scan results."""
     table = Table(title=f"Stock Scan Results (Top {len(results)} by Score)")
     table.add_column("Rank", style="white")
     table.add_column("Symbol", style="cyan")
@@ -317,3 +366,75 @@ def scan_cmd(
         )
     
     console.print(table)
+
+
+def _display_smc_results(results: list, top: int, min_score: int = 50):
+    """Display Smart Money Concepts scan results."""
+    if not results:
+        console.print(f"[yellow]No SMC setups found (score < {min_score}%)[/yellow]")
+        return
+    
+    # Sort by score and take top N
+    results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)
+    if top and len(results) > top:
+        results = results[:top]
+    
+    table = Table(title=f"Smart Money Concepts Scan (Top {len(results)} Setups)")
+    table.add_column("Symbol", style="cyan", no_wrap=True)
+    table.add_column("Signal", style="green")
+    table.add_column("Score", style="bright_green")
+    table.add_column("Strength", style="white")
+    table.add_column("HTF", style="yellow")
+    table.add_column("Sweep", style="yellow")
+    table.add_column("MSS", style="yellow")
+    table.add_column("FVG", style="yellow")
+    table.add_column("Pattern", style="bright_blue")
+    table.add_column("Price", style="white")
+
+    for r in results:
+        signal_color = "green" if r["signal"] == "BUY" else ("red" if r["signal"] == "SELL" else "white")
+        
+        # Score with color
+        score = r.get("score", 0)
+        if score >= 75:
+            score_color = "green"
+            strength = "STRONG"
+        elif score >= 60:
+            score_color = "yellow"
+            strength = "MODERATE"
+        else:
+            score_color = "red"
+            strength = "WEAK"
+        score_display = f"[{score_color}]{score}%[/{score_color}]"
+        
+        # Check marks for conditions
+        htf_mark = "✅" if r.get("htf_aligned") else "❌"
+        sweep_mark = "✅" if r.get("liquidity_sweep") else "❌"
+        mss_mark = "✅" if r.get("mss_confirmed") else "❌"
+        fvg_mark = "✅" if r.get("fvg_present") else "❌"
+        
+        # Pattern info
+        pattern = r.get("pattern", "NONE")
+        
+        # Shorten symbol for display
+        symbol_short = r["symbol"].replace("NSE:", "").replace("-EQ", "")[:12]
+        
+        table.add_row(
+            symbol_short,
+            f"[{signal_color}]{r['signal']}[/{signal_color}]",
+            score_display,
+            strength,
+            htf_mark,
+            sweep_mark,
+            mss_mark,
+            fvg_mark,
+            pattern,
+            f"₹{r['price']:.2f}"
+        )
+    
+    console.print(table)
+    
+    # Print summary
+    strong_count = sum(1 for r in results if r.get("score", 0) >= 75)
+    console.print(f"\n[dim]Found {len(results)} setups: {strong_count} Strong (≥75%), {len(results) - strong_count} Below 75%[/dim]")
+    console.print("[dim]Legend: HTF=Higher Timeframe | Sweep=Liquidity Sweep | MSS=Market Structure Shift | FVG=Fair Value Gap[/dim]")
