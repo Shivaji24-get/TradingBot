@@ -106,9 +106,16 @@ session/
 
 # Selenium
 driver/
-*.log
 chromedriver
 geckodriver
+
+# SECURITY: Encryption keys and tokens must NEVER be committed
+token.key
+token.enc
+*.key
+*.pem
+secrets/
+.secrets/
 
 # Demo files (optional - include if small)
 # demo.gif
