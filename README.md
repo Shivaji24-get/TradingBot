@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-A professional CLI-based algorithmic trading bot for the Indian stock market, powered by the Fyers API. Features multi-stock scanning, live data streaming, pattern detection, and probability-based signal scoring.
+A professional CLI-based algorithmic trading bot for the Indian stock market, powered by the Fyers API. Features multi-stock scanning, live data streaming, pattern detection, and probability-based [...]
 
 ## 📸 Demo Screenshots
 
@@ -31,8 +31,8 @@ A professional CLI-based algorithmic trading bot for the Indian stock market, po
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/fyers-trading-bot.git
-cd fyers-trading-bot
+git clone https://github.com/Shivaji24-get/TradingBot.git
+cd TradingBot
 
 # Create conda environment
 conda create -n fyers-env python=3.9
@@ -118,16 +118,16 @@ python -m cli.main order-status --order-id 230415000000001
 Scanning 12 stocks from BANKNIFTY index...
 Scan complete. Found 12 signals.
 
-                    Stock Scan Results (Top 5 by Score)
-┏━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━┳━━━━━━━━┳━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┓
+                     Stock Scan Results (Top 5 by Score)
+┏━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━┳━━━━━━━━┳━━━━━━━┳━[...]
 ┃ Rank ┃ Symbol            ┃ Price    ┃ Score ┃ Signal ┃ RSI   ┃ SMA20    ┃ Pattern  ┃
-┡━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━╇━━━━━━━━╇━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━┩
+┡━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━╇━━━━━━━━╇━━━━━━━╇━[...]
 │ 1    │ NSE:BANDHANBNK-EQ │ ₹174.47  │ 75%   │ SELL   │ 70.11 │ ₹158.26  │ 📉 100%  │
 │ 2    │ NSE:AXISBANK-EQ   │ ₹1359.10 │ 65%   │ SELL   │ 75.30 │ ₹1257.53 │ 📈 53%   │
 │ 3    │ NSE:AUBANK-EQ     │ ₹990.60  │ 55%   │ SELL   │ 70.42 │ ₹918.03  │          │
 │ 4    │ NSE:BANKBARODA-EQ │ ₹280.44  │ 53%   │ SELL   │ 56.83 │ ₹269.82  │ 📉 93%   │
 │ 5    │ NSE:CANBK-EQ      │ ₹142.37  │ 53%   │ SELL   │ 60.34 │ ₹134.60  │ 📉 65%   │
-└──────┴───────────────────┴──────────┴───────┴────────┴───────┴──────────┴──────────┘
+└──────┴───────────────────┴──────────┴───────┴────────┴───────┴─[...]
 ```
 
 ### Live Scan Output
@@ -287,7 +287,7 @@ By using this software, you acknowledge that you understand these risks and agre
 
 ## 📞 Support
 
-For issues and feature requests, please use the [GitHub Issues](https://github.com/yourusername/fyers-trading-bot/issues) page.
+For issues and feature requests, please use the [GitHub Issues](https://github.com/Shivaji24-get/TradingBot/issues) page.
 
 ## 🙏 Acknowledgments
 
