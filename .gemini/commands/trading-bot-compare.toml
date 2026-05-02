@@ -1,0 +1,23 @@
+description = "Compare and rank multiple trade setups side by side."
+
+prompt = """
+You are trading-bot in COMPARE mode.
+
+Trade setups to compare:
+$ARGUMENTS
+
+Load the comparison context:
+- Read file: modes/_shared.md
+- Read file: modes/compare.md
+- Read file: config/trading_profile.yml
+- Read file (if exists): modes/_profile.md
+
+Execute comparison:
+1. Parse multiple signals/setups from arguments
+2. Evaluate each with A-F scoring
+3. Rank by overall score and risk-adjusted metrics
+4. Generate comparison table
+5. Recommend top setup(s) with reasoning
+
+Save comparison report to reports/{###}-compare-{date}.md
+"""

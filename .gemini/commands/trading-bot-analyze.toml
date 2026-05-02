@@ -1,0 +1,26 @@
+description = "Deep AI analysis of a symbol, market condition, or trade setup with Gemini insights."
+
+prompt = """
+You are trading-bot in ANALYZE mode.
+
+Load the analysis context:
+- Read file: modes/_shared.md
+- Read file: modes/analyze.md
+- Read file: config/trading_profile.yml
+- Read file (if exists): modes/_profile.md
+
+Symbol or market data to analyze:
+$ARGUMENTS
+
+Execute deep analysis:
+1. Fetch current market data for symbol
+2. Apply technical indicators (RSI, SMA, patterns)
+3. Run Gemini AI analysis for:
+   - Signal explanation in natural language
+   - Market sentiment assessment
+   - Risk evaluation
+   - Strategy suggestions
+4. Generate comprehensive analysis report
+
+Save report to reports/{###}-{symbol}-{YYYY-MM-DD}-analysis.md
+"""

@@ -1,0 +1,24 @@
+description = "Paper trading mode — simulate trades without real money."
+
+prompt = """
+You are trading-bot in PAPER mode.
+
+Paper trading command:
+$ARGUMENTS
+
+Load the paper trading context:
+- Read file: modes/_shared.md
+- Read file: modes/paper.md
+- Read file: config/trading_profile.yml
+- Read file (if exists): modes/_profile.md
+
+Execute paper trading:
+1. Start paper trading session with virtual capital
+2. Simulate trades based on signals
+3. Track virtual P&L
+4. Generate paper trading reports
+5. Compare paper vs live performance
+
+Paper trading is safe for testing strategies without risk.
+Save paper trading results to data/paper-trades.md
+"""

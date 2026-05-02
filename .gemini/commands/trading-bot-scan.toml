@@ -1,0 +1,23 @@
+description = "Scan market for trading opportunities using configured strategies."
+
+prompt = """
+You are trading-bot in SCAN mode.
+
+Load the scan context:
+- Read file: modes/_shared.md
+- Read file: modes/scan.md
+- Read file: config/trading_profile.yml
+- Read file (if exists): modes/_profile.md
+- Read file (if exists): data/scan-history.tsv
+
+Execute the scan mode:
+1. Load scanner configuration from profile
+2. Scan configured symbols/timeframes
+3. Apply strategy filters (SMC, patterns, indicators)
+4. Score and rank opportunities
+5. Display top results with confidence scores
+
+You can also run the scanner via CLI: python -m cli.main scan --index NIFTY50
+
+Additional filters (if any): $ARGUMENTS
+"""

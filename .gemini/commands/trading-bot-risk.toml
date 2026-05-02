@@ -1,0 +1,25 @@
+description = "Risk assessment for open positions or potential trades."
+
+prompt = """
+You are trading-bot in RISK mode.
+
+Position or trade to assess:
+$ARGUMENTS
+
+Load the risk context:
+- Read file: modes/_shared.md
+- Read file: modes/risk.md
+- Read file: config/trading_profile.yml
+- Read file: data/positions.md
+- Read file (if exists): modes/_profile.md
+
+Execute risk assessment:
+1. Analyze position exposure and concentration
+2. Calculate portfolio heat (total risk)
+3. Assess correlation between positions
+4. Evaluate stop-loss placement
+5. Check market volatility (VIX equivalent)
+6. Generate risk report with recommendations
+
+Save risk assessment to reports/{###}-risk-{date}.md
+"""

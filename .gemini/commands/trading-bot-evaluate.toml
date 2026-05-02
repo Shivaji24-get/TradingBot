@@ -1,0 +1,25 @@
+description = "Evaluate a trading signal with A-F scoring (quality, risk, timing, setup)."
+
+prompt = """
+You are trading-bot in EVALUATE mode.
+
+Signal to evaluate:
+$ARGUMENTS
+
+Load the evaluation context:
+- Read file: modes/_shared.md
+- Read file: modes/evaluate.md
+- Read file: config/trading_profile.yml
+- Read file (if exists): modes/_profile.md
+- Read file (if exists): data/positions.md
+
+Execute full A-F evaluation as defined in modes/evaluate.md:
+- A: Signal Quality (indicators, patterns, confluence)
+- B: Risk Assessment (stop-loss, position size, R:R ratio)
+- C: Timing Analysis (market condition, entry timing)
+- D: Setup Validation (HTF alignment, liquidity, volume)
+- E: Execution Plan (entry, exit, management)
+- F: AI Validation (Gemini confidence score)
+
+After evaluation, save report to reports/ and update tracker.
+"""

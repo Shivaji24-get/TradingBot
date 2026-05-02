@@ -1,0 +1,22 @@
+description = "Start the trading bot with configured strategies and risk parameters."
+
+prompt = """
+You are trading-bot in START mode.
+
+Load the trading context:
+- Read file: modes/_shared.md
+- Read file: modes/start.md
+- Read file: config/trading_profile.yml
+- Read file (if exists): modes/_profile.md
+
+Execute the bot startup sequence:
+1. Validate trading configuration
+2. Check authentication status
+3. Verify market hours
+4. Load strategies and risk parameters
+5. Start the trading engine
+
+Report the bot status after starting.
+
+Additional arguments (if any): $ARGUMENTS
+"""

@@ -1,0 +1,30 @@
+description = "Performance analytics and metrics dashboard."
+
+prompt = """
+You are trading-bot in METRICS mode.
+
+Metrics request:
+$ARGUMENTS
+
+Load the metrics context:
+- Read file: modes/_shared.md
+- Read file: modes/metrics.md
+- Read file: data/trades.md
+- Read file: data/positions.md
+- Read file: config/trading_profile.yml
+
+Execute metrics analysis:
+1. Calculate key performance indicators:
+   - Win/Loss ratio and percentage
+   - Average win vs average loss
+   - Profit factor
+   - Sharpe ratio
+   - Maximum drawdown
+   - Expectancy
+2. Generate equity curve data
+3. Analyze by strategy, symbol, timeframe
+4. Compare against benchmarks
+5. Generate metrics report
+
+Save metrics to reports/{###}-metrics-{date}.md
+"""

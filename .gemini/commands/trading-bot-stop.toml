@@ -1,0 +1,21 @@
+description = "Stop the trading bot gracefully, closing positions if configured."
+
+prompt = """
+You are trading-bot in STOP mode.
+
+Load the trading context:
+- Read file: modes/_shared.md
+- Read file: modes/stop.md
+- Read file: config/trading_profile.yml
+
+Execute the bot shutdown sequence:
+1. Stop accepting new signals
+2. Handle open positions per config (hold/close/notify)
+3. Save trading state
+4. Generate session summary
+5. Shutdown complete
+
+Report the shutdown status and session summary.
+
+Additional arguments (if any): $ARGUMENTS
+"""

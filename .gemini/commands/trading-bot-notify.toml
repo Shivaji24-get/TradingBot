@@ -1,0 +1,28 @@
+description = "Configure notifications — Telegram, email alerts for trades and errors."
+
+prompt = """
+You are trading-bot in NOTIFY mode.
+
+Notification command:
+$ARGUMENTS
+
+Load the notification context:
+- Read file: modes/_shared.md
+- Read file: modes/notify.md
+- Read file: config/trading_profile.yml
+- Read file (if exists): modes/_profile.md
+
+Execute notification configuration:
+1. Configure Telegram bot token and chat ID
+2. Set up email SMTP settings
+3. Define alert rules:
+   - New trade executed
+   - Position exited (P&L)
+   - High-risk signal detected
+   - Error conditions
+   - Daily summary
+4. Test notification channels
+5. Save configuration
+
+Notification config stored in config/trading_profile.yml
+"""

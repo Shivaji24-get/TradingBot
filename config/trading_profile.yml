@@ -1,0 +1,174 @@
+# TradingBot Profile Configuration
+# Personal trading preferences - EDIT THIS FILE
+# Copy from trading_profile.example.yml if needed
+
+# =============================================================================
+# TRADER IDENTITY
+# =============================================================================
+trader:
+  name: "Your Name"
+  email: "your@email.com"
+  timezone: "Asia/Kolkata"
+  
+  notifications:
+    email_enabled: false
+    telegram_enabled: false
+    telegram_bot_token: ""
+    telegram_chat_id: ""
+
+# =============================================================================
+# RISK PROFILE
+# =============================================================================
+risk_profile:
+  risk_per_trade: 0.01        # 1% risk per trade (conservative)
+  max_positions: 5
+  max_position_value: 20000
+  min_position_value: 5000
+  max_daily_loss: 0.03       # 3% daily loss limit
+  max_trades_per_day: 10
+  default_stop_loss_pct: 1.5
+  default_take_profit_pct: 4.5
+  min_risk_reward_ratio: 2.0
+  max_drawdown_pct: 10.0
+
+# =============================================================================
+# TRADING PREFERENCES
+# =============================================================================
+trading_preferences:
+  default_symbols:
+    - "NSE:NIFTY50-INDEX"
+    - "NSE:BANKNIFTY-INDEX"
+    - "NSE:RELIANCE-EQ"
+    - "NSE:TCS-EQ"
+    - "NSE:HDFCBANK-EQ"
+    - "NSE:ICICIBANK-EQ"
+  
+  market_session:
+    pre_market_start: "09:00"
+    market_open: "09:15"
+    market_close: "15:30"
+    post_market_end: "16:00"
+  
+  trading_mode: "MIS"
+  order_type: "MARKET"
+  
+  auto_trading:
+    enabled: false
+    confirmation_required: true
+    min_signal_score: 75
+    paper_trading: true
+  
+  scanning:
+    interval_seconds: 60
+    use_live_data: true
+    historical_lookback: 50
+
+# =============================================================================
+# STRATEGY CONFIGURATION
+# =============================================================================
+strategies:
+  enabled:
+    - "smart_money"
+    - "order_block"
+    - "fvg_detector"
+  
+  smart_money:
+    min_pattern_size: 5
+    confidence_threshold: 0.70
+    require_fvg: true
+    require_mss: true
+    
+  order_block:
+    lookback_periods: 20
+    volume_threshold: 1.5
+    
+  fvg_detector:
+    min_gap_size: 0.5
+    fill_threshold: 0.3
+
+# =============================================================================
+# NOTIFICATION THRESHOLDS
+# =============================================================================
+alerts:
+  on_signal_generated: true
+  on_trade_executed: true
+  on_stop_loss_hit: true
+  on_take_profit_hit: true
+  on_daily_limit_reached: true
+  on_error: true
+  
+  quiet_hours:
+    start: "22:00"
+    end: "08:00"
+
+# =============================================================================
+# REPORTING PREFERENCES
+# =============================================================================
+reporting:
+  daily_report: true
+  weekly_report: true
+  monthly_report: true
+  export_formats:
+    - "csv"
+  save_to_disk: true
+
+# =============================================================================
+# API CONFIGURATION
+# =============================================================================
+api:
+  fyers:
+    client_id: ""           # Your Fyers client ID
+    redirect_uri: "http://127.0.0.1:5000/fyers/callback"
+    log_level: "INFO"
+  
+  rate_limits:
+    quotes: 10
+    orders: 5
+    historical: 2
+
+# =============================================================================
+# AI & AUTOMATION (Gemini Integration)
+# =============================================================================
+ai:
+  gemini:
+    enabled: false
+    api_key: "${GEMINI_API_KEY}"
+    model: "gemini-1.5-flash"
+    
+    features:
+      explain_signals: true
+      validate_signals: true
+      suggest_position_size: true
+      analyze_trades: true
+    
+    thresholds:
+      min_confidence: 0.70
+      max_vix_for_trading: 25
+    
+    analysis:
+      include_market_context: true
+      include_sector_analysis: true
+      provide_reasoning: true
+
+# =============================================================================
+# ADVANCED SETTINGS
+# =============================================================================
+advanced:
+  log_level: "INFO"
+  log_retention_days: 30
+  structured_logging: true
+  
+  retry:
+    max_attempts: 3
+    backoff_factor: 2.0
+    max_delay_seconds: 60
+  
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout: 300
+    half_open_max_calls: 3
+  
+  performance:
+    max_workers: 4
+    queue_size: 100
+    cache_ttl_seconds: 60

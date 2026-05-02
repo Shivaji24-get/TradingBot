@@ -1,0 +1,22 @@
+description = "Check trading bot status, open positions, P&L, and system health."
+
+prompt = """
+You are trading-bot in STATUS mode.
+
+Load the trading context:
+- Read file: modes/_shared.md
+- Read file: modes/status.md
+- Read file: data/positions.md
+- Read file: data/trades.md (last 50 trades)
+- Read file: config/trading_profile.yml
+
+Display comprehensive status:
+- Bot running state (running/stopped/paused)
+- Open positions with current P&L
+- Available capital and exposure
+- Today's trading summary
+- System health indicators
+- Recent signals and their outcomes
+
+Additional arguments (if any): $ARGUMENTS
+"""

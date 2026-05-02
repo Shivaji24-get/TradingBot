@@ -1,0 +1,27 @@
+description = "Run backtest on a trading strategy with historical data."
+
+prompt = """
+You are trading-bot in BACKTEST mode.
+
+Load the backtest context:
+- Read file: modes/_shared.md
+- Read file: modes/backtest.md
+- Read file: config/trading_profile.yml
+- Read file (if exists): modes/_profile.md
+
+Backtest parameters:
+$ARGUMENTS
+
+Execute backtest:
+1. Parse strategy and date range from arguments
+2. Load historical data for specified period
+3. Run strategy simulation
+4. Calculate performance metrics:
+   - Win/loss ratio
+   - Sharpe ratio
+   - Max drawdown
+   - Total return
+5. Generate backtest report with charts
+
+Save report to reports/{###}-{strategy}-{date}-backtest.md
+"""

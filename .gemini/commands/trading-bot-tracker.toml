@@ -1,0 +1,21 @@
+description = "Trading activity tracker overview — trades, P&L, performance."
+
+prompt = """
+You are trading-bot in TRACKER mode.
+
+Load the tracker context:
+- Read file: modes/_shared.md
+- Read file: modes/tracker.md
+- Read file: data/trades.md
+- Read file: data/positions.md
+- Read file: data/signals.md
+
+Execute tracker overview:
+1. Calculate performance metrics (win rate, P&L, Sharpe)
+2. Show recent trade history
+3. Display open positions status
+4. Generate daily/weekly/monthly summaries
+5. Identify patterns in winning/losing trades
+
+Period filter (if any): $ARGUMENTS
+"""

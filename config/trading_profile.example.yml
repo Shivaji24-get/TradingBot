@@ -1,0 +1,220 @@
+# TradingBot Profile Configuration
+# Copy this file to config/trading_profile.yml and fill in your details.
+# This is the single source of truth for your trading preferences across all operations.
+
+# =============================================================================
+# TRADER IDENTITY
+# =============================================================================
+trader:
+  name: "Your Name"
+  email: "your@email.com"
+  phone: "+91-XXXXXXXXXX"
+  timezone: "Asia/Kolkata"  # IANA timezone identifier
+  
+  # Notification preferences
+  notifications:
+    email_enabled: false
+    sms_enabled: false
+    telegram_enabled: false
+    telegram_bot_token: ""  # If using Telegram notifications
+    telegram_chat_id: ""
+
+# =============================================================================
+# RISK PROFILE
+# =============================================================================
+risk_profile:
+  # Position sizing - percentage of capital per trade
+  risk_per_trade: 0.02        # 2% risk per trade (standard)
+  
+  # Maximum exposure limits
+  max_positions: 5          # Maximum concurrent positions
+  max_position_value: 50000  # Maximum ₹ value per position
+  min_position_value: 10000  # Minimum ₹ value per position
+  
+  # Daily limits
+  max_daily_loss: 0.05       # 5% of capital - stop trading if reached
+  max_trades_per_day: 10     # Maximum trades per day
+  
+  # Stop loss and take profit defaults
+  default_stop_loss_pct: 2.0      # Default 2% stop loss
+  default_take_profit_pct: 3.0      # Default 3% take profit
+  
+  # Risk-Reward ratio requirements
+  min_risk_reward_ratio: 1.5       # Minimum 1:1.5 R:R to take trade
+  
+  # Drawdown protection
+  max_drawdown_pct: 10.0          # Stop trading if drawdown exceeds 10%
+
+# =============================================================================
+# TRADING PREFERENCES
+# =============================================================================
+trading_preferences:
+  # Default symbols to monitor
+  default_symbols:
+    - "NSE:NIFTY50-INDEX"
+    - "NSE:BANKNIFTY-INDEX"
+    - "NSE:RELIANCE-EQ"
+    - "NSE:TCS-EQ"
+  
+  # Market session times (24-hour format)
+  market_session:
+    pre_market_start: "09:00"
+    market_open: "09:15"
+    market_close: "15:30"
+    post_market_end: "16:00"
+  
+  # Trading modes
+  trading_mode: "MIS"       # MIS (intraday) or CNC (delivery)
+  order_type: "MARKET"      # MARKET or LIMIT
+  
+  # Auto-trading settings
+  auto_trading:
+    enabled: false          # Enable automatic order placement
+    confirmation_required: true    # Require manual confirmation
+    min_signal_score: 75     # Minimum score to auto-trade (0-100)
+    paper_trading: true      # Start with paper trading
+  
+  # Scanning preferences
+  scanning:
+    interval_seconds: 60      # Seconds between scans
+    use_live_data: true      # Use live market data
+    historical_lookback: 50  # Candles to fetch for analysis
+
+# =============================================================================
+# STRATEGY CONFIGURATION
+# =============================================================================
+strategies:
+  # Enable/disable specific strategies
+  enabled:
+    - "smart_money"
+    - "order_block"
+    - "mss_detector"
+  
+  # Strategy-specific settings
+  smart_money:
+    min_pattern_size: 5
+    confidence_threshold: 0.75
+    
+  order_block:
+    lookback_periods: 20
+    volume_threshold: 1.5
+    
+  mss_detector:
+    swing_lookback: 10
+    confirmation_required: true
+
+# =============================================================================
+# NOTIFICATION THRESHOLDS
+# =============================================================================
+alerts:
+  # When to send notifications
+  on_signal_generated: true
+  on_trade_executed: true
+  on_stop_loss_hit: true
+  on_take_profit_hit: true
+  on_daily_limit_reached: true
+  on_error: true
+  
+  # Quiet hours (no notifications)
+  quiet_hours:
+    start: "22:00"
+    end: "08:00"
+
+# =============================================================================
+# REPORTING PREFERENCES
+# =============================================================================
+reporting:
+  # Auto-generate reports
+  daily_report: true
+  weekly_report: true
+  monthly_report: true
+  
+  # Export formats
+  export_formats:
+    - "csv"
+    - "json"
+  
+  # Report delivery
+  email_reports: false
+  save_to_disk: true
+
+# =============================================================================
+# API CONFIGURATION
+# =============================================================================
+api:
+  # Fyers API settings
+  fyers:
+    client_id: ""           # Your Fyers client ID
+    redirect_uri: "http://127.0.0.1:5000/fyers/callback"
+    log_level: "INFO"
+  
+  # Rate limiting (requests per second)
+  rate_limits:
+    quotes: 10
+    orders: 5
+    historical: 2
+
+# =============================================================================
+# ADVANCED SETTINGS
+# =============================================================================
+advanced:
+  # Logging configuration
+  log_level: "INFO"         # DEBUG, INFO, WARNING, ERROR
+  log_retention_days: 30    # Keep logs for 30 days
+  structured_logging: true  # Use JSON format for logs
+  
+  # Retry configuration
+  retry:
+    max_attempts: 3
+    backoff_factor: 2.0
+    max_delay_seconds: 60
+  
+  # Circuit breaker settings
+  circuit_breaker:
+    failure_threshold: 5      # Failures before opening
+    recovery_timeout: 300    # Seconds before trying again
+    half_open_max_calls: 3    # Test calls when half-open
+  
+  # Performance tuning
+  performance:
+    max_workers: 4            # Thread pool size
+    queue_size: 100         # Task queue size
+    cache_ttl_seconds: 60     # Data cache time-to-live
+
+# =============================================================================
+# AI & AUTOMATION (Gemini Integration)
+# =============================================================================
+ai:
+  # Google Gemini AI for signal analysis and validation
+  gemini:
+    enabled: false                    # Enable AI-powered features
+    api_key: "${GEMINI_API_KEY}"      # Set via env var or paste here
+    model: "gemini-1.5-flash"          # Model to use (flash is faster, pro is smarter)
+    
+    # AI features to enable
+    features:
+      explain_signals: true           # Generate natural language signal explanations
+      validate_signals: true           # AI validation of signal quality
+      suggest_position_size: true     # AI-optimized position sizing
+      analyze_trades: true            # Post-trade analysis and insights
+    
+    # Validation thresholds
+    thresholds:
+      min_confidence: 0.75            # Minimum AI confidence to accept signal
+      max_vix_for_trading: 25        # Don't trade if VIX > 25
+    
+    # Analysis settings
+    analysis:
+      include_market_context: true    # Consider Nifty/VIX in analysis
+      include_sector_analysis: true   # Consider sector performance
+      provide_reasoning: true         # Include AI reasoning in output
+
+# =============================================================================
+# NOTES & CUSTOMIZATION
+# =============================================================================
+# Add any custom notes or strategy-specific configurations below:
+#
+# custom_notes: |
+#   - Prefer trading in first hour after market open
+#   - Avoid trading on expiry days
+#   - Focus on high-volume breakouts only
