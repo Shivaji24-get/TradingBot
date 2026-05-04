@@ -120,3 +120,26 @@ secrets/
 # Demo files (optional - include if small)
 # demo.gif
 # demo.mp4
+
+# Create .gitignore
+echo "token.enc
+config.ini
+config copy.ini
+*.log
+logs/
+output/
+tmp/
+__pycache__/
+*.pyc
+.DS_Store
+data/*.md
+!data/.gitkeep
+reports/
+batch/
+.vscode/
+.idea/" > .gitignore
+
+# Add and push .gitignore
+git add .gitignore
+git commit -m "chore: Add .gitignore for sensitive files and logs"
+git push origin main
