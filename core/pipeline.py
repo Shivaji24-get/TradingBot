@@ -265,6 +265,36 @@ class TradingPipeline:
         """Get results from last execution."""
         return self._results
     
+    def health_check(self) -> Dict[str, bool]:
+        """
+        Run health checks on pipeline components.
+        
+        Returns:
+            Dictionary of check names and their status (True=healthy)
+        """
+        checks = {
+            'pipeline_initialized': True,
+            'fyers_client': self.fyers_client is not None,
+            'tracker': self.tracker is not None,
+            'config_loaded': self.config is not None,
+            'risk_manager': self.risk_manager is not None or True,  # Optional
+            'signal_generator': self.signal_generator is not None or True,  # Optional
+        }
+        
+        # Test API connectivity if client available
+        if self.fyers_client:
+            try:
+                # Try to get funds as a simple connectivity test
+                from api import get_funds
+                funds = get_funds(self.fyers_client)
+                checks['api_connectivity'] = funds is not None
+            except Exception:
+                checks['api_connectivity'] = False
+        else:
+            checks['api_connectivity'] = False
+        
+        return checks
+    
     # Step Handlers
     
     def _handle_market_data(self, symbol: str) -> PipelineResult:

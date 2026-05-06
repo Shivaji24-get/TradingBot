@@ -304,7 +304,7 @@ def scan_cmd(
                 ltf_timeframe=ltf_timeframe,
                 htf_timeframe=htf_timeframe,
                 ltf_limit=limit or 100,
-                htf_limit=50,
+                htf_limit=200,
                 min_score=min_score  # Use CLI parameter (default: 50)
             )
             
@@ -505,7 +505,7 @@ def start_bot_cmd(
         
         if all(checks.values()):
             console.print("[green]All checks passed! Starting bot...[/green]")
-            pipeline.start(paper_trading=paper)
+            pipeline.start()
         else:
             console.print("[red]Some checks failed. Fix issues before starting.[/red]")
             
