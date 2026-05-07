@@ -50,7 +50,7 @@ def generate_daily_report(
         report = _generate_markdown_report(metrics, daily_series)
     
     if output_path:
-        Path(output_path).write_text(report)
+        Path(output_path).write_text(report, encoding="utf-8")
         print(f"Report saved to: {output_path}")
     
     return report

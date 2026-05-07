@@ -402,7 +402,7 @@ class MetricsCollector:
             raise ValueError(f"Unknown format: {format}")
         
         if output_path:
-            Path(output_path).write_text(report)
+            Path(output_path).write_text(report, encoding="utf-8")
             logger.info(f"Metrics report saved to {output_path}")
         
         return report

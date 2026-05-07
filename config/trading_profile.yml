@@ -7,7 +7,7 @@
 # =============================================================================
 trader:
   name: "Your Name"
-  email: "your@email.com"
+  email: "anumandla.shivaji@gmail.com"
   timezone: "Asia/Kolkata"
   
   notifications:
@@ -117,7 +117,8 @@ reporting:
 # =============================================================================
 api:
   fyers:
-    client_id: ""           # Your Fyers client ID
+    client_id: "ID52MLOEQQ-100"           # Your Fyers client ID
+    secret_key: "Z5AI98KTZZ"              # Your Fyers secret key
     redirect_uri: "http://127.0.0.1:5000/fyers/callback"
     log_level: "INFO"
   

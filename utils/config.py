@@ -132,9 +132,8 @@ def load_yaml_profile(profile_path: str = "config/trading_profile.yml") -> Dict[
     if 'api' in yaml_data and 'fyers' in yaml_data['api']:
         fyers = yaml_data['api']['fyers']
         config['client_id'] = fyers.get('client_id', '')
+        config['secret_key'] = fyers.get('secret_key', '')
         config['redirect_uri'] = fyers.get('redirect_uri', 'http://127.0.0.1:5000/fyers/callback')
-        # Secret key should come from environment or secure storage
-        config['secret_key'] = os.getenv('FYERS_SECRET_KEY', '')
     
     # Logging
     if 'advanced' in yaml_data and 'log_level' in yaml_data['advanced']:
