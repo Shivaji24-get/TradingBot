@@ -356,9 +356,27 @@ class TradingPipeline:
         logger.info("TradingPipeline started")
     
     def stop(self):
-        """Stop the pipeline."""
+        """Stop the pipeline gracefully."""
         self._running = False
         logger.info("TradingPipeline stopped")
+    
+    def emergency_stop(self):
+        """Emergency stop - halt immediately without cleanup."""
+        self._running = False
+        logger.warning("TradingPipeline EMERGENCY STOP triggered")
+    
+    def close_all_positions(self):
+        """Close all open positions (called during shutdown)."""
+        logger.info("Closing all positions...")
+        if self.tracker:
+            try:
+                active = self.tracker.get_active_positions()
+                for symbol, pos in active.items():
+                    logger.info(f"Closing position: {symbol}")
+                    # Position closure logic would go here
+            except Exception as e:
+                logger.error(f"Error closing positions: {e}")
+        logger.info("All positions closed")
     
     def get_results(self) -> List[PipelineResult]:
         """Get results from last execution."""

@@ -587,30 +587,22 @@ def stop_bot_cmd(
     force: bool = typer.Option(False, "--force", help="Force immediate shutdown"),
     close_positions: bool = typer.Option(False, "--close-all", help="Close all positions before stopping")
 ):
-    """Stop the trading bot gracefully."""
-    console.print("[yellow]Stopping Trading Bot...[/yellow]")
+    """
+    Stop the trading bot gracefully.
     
-    try:
-        from core.pipeline import TradingPipeline
-        
-        pipeline = TradingPipeline()
-        
-        if force:
-            console.print("[red]Force stopping immediately![/red]")
-            pipeline.emergency_stop()
-        else:
-            console.print("[cyan]Graceful shutdown sequence...[/cyan]")
-            
-            if close_positions:
-                console.print("[yellow]Closing all positions...[/yellow]")
-                pipeline.close_all_positions()
-            
-            pipeline.stop()
-            
-        console.print("[green]Bot stopped successfully.[/green]")
-        
-    except Exception as e:
-        console.print(f"[red]Error stopping bot: {e}[/red]")
+    NOTE: The bot runs in the main process. To stop it:
+    1. Press Ctrl+C in the terminal where bot is running (recommended)
+    2. Or use --force to kill the process (emergency only)
+    """
+    console.print("[yellow]To stop the bot:[/yellow]")
+    console.print("[cyan]1. Press Ctrl+C in the terminal where the bot is running[/cyan]")
+    console.print("[dim]   This is the safest method for graceful shutdown[/dim]")
+    console.print()
+    console.print("[dim]The 'stop-bot' command requires the bot to be running as a separate[/dim]")
+    console.print("[dim]service. Currently, the bot runs in the main CLI process.[/dim]")
+    
+    if force:
+        console.print("\n[red]Force stop requested. Please press Ctrl+C in the bot terminal instead.[/red]")
 
 
 def status_cmd(
@@ -1109,8 +1101,8 @@ def positions_cmd():
         
         if active:
             console.print(f"\n[green]Active Positions: {len(active)}[/green]")
-            for pos in active:
-                console.print(f"  {pos.symbol}: {pos.quantity} shares @ ₹{pos.entry_price:.2f}")
+            for symbol, pos in active.items():
+                console.print(f"  {symbol}: {pos.qty} shares @ ₹{pos.entry_price:.2f}")
         else:
             console.print("\n[dim]No active positions[/dim]")
             

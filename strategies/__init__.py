@@ -14,6 +14,7 @@ from .liquidity import LiquidityDetector
 from .fvg_detector import FVGDetector, FVG, FVGType
 from .order_block import OrderBlockDetector, OrderBlock, OBType
 from .mss_detector import MSSDetector, MSS, MSSState, MSSType
+from .harmonic_detector import HarmonicDetector, HarmonicPattern
 
 __all__ = [
     "BaseStrategy", "SignalGenerator", "RiskManager", "StockScanner",
@@ -27,5 +28,6 @@ __all__ = [
     "LiquidityDetector",
     "FVGDetector", "FVG", "FVGType",
     "OrderBlockDetector", "OrderBlock", "OBType",
-    "MSSDetector", "MSS", "MSSState", "MSSType"
+    "MSSDetector", "MSS", "MSSState", "MSSType",
+    "HarmonicDetector", "HarmonicPattern"
 ]
