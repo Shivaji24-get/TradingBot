@@ -66,25 +66,17 @@ risk_profile:
 # =============================================================================
 trading_preferences:
   default_symbols:
-    - "NSE:NIFTY50"           # NIFTY 50 Index
-    - "NSE:BANKNIFTY"         # Bank Nifty Index (corrected format)
-    - "NSE:RELIANCE-EQ"
-    - "NSE:TCS-EQ"
-    - "NSE:HDFCBANK-EQ"
-    - "NSE:ICICIBANK-EQ"
-    - "NSE:NUVAMA-EQ"
-    - "NSE:PIDILITIND-EQ"
-    - "NSE:BIOCON-EQ"
-    - "NSE:COFORGE-EQ"
-    - "NSE:LAURUSLABS-EQ"
-    - "NSE:DABUR-EQ"
-    - "NSE:MOTHERSON-EQ"
-    - "NSE:TECHM-EQ"
-    - "NSE:SRF-EQ"
-    - "NSE:PERSISTENT-EQ"
-    - "NSE:WAAREEENER-EQ"
-    - "NSE:CROMPTON-EQ"
-    - "NSE:AUROPHARMA-EQ"
+    # Core 6 symbols (tested and working, avoid rate limits)
+    - "NSE:NIFTY50-INDEX"     # NIFTY 50 Index
+    - "NSE:NIFTYBANK-INDEX"   # Bank Nifty Index
+    - "NSE:RELIANCE-EQ"       # Reliance Industries
+    - "NSE:TCS-EQ"            # Tata Consultancy
+    - "NSE:HDFCBANK-EQ"       # HDFC Bank
+    - "NSE:ICICIBANK-EQ"      # ICICI Bank
+    # Add more symbols gradually to avoid rate limits:
+    # - "NSE:INFY-EQ"
+    # - "NSE:SBIN-EQ"
+    # - "NSE:ITC-EQ"
   
   market_session:
     pre_market_start: "09:00"
