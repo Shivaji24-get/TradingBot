@@ -1,0 +1,23 @@
+# =============================================================================
+# TradingBot – Development & optional dependencies
+# =============================================================================
+# Install: pip install -r requirements-dev.txt
+# These are NOT needed for production/paper trading.
+# =============================================================================
+
+# --- Selenium (for browser-based Fyers OAuth login flow) ---
+selenium>=4.0.0
+webdriver-manager>=4.0.0
+
+# --- Demo GIF creation (only for README/demo) ---
+moviepy>=1.0.0
+
+# --- Testing ---
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# --- Structured logging (optional, enables JSON log format) ---
+python-json-logger>=2.0.0
+
+# --- Gemini AI (optional feature) ---
+google-generativeai>=0.3.0

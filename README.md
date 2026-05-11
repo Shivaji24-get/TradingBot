@@ -1,609 +1,299 @@
-# 🤖 TradingBot — AI-Powered Algorithmic Trading System
+# 🤖 TradingBot — AI-Powered Algorithmic Trading for Indian Markets
 
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Fyers API](https://img.shields.io/badge/Fyers-API-green.svg)](https://myapi.fyers.in/)
-[![Gemini CLI](https://img.shields.io/badge/Gemini-CLI-purple.svg)](https://github.com/aquilax/gemini-cli)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Fyers API](https://img.shields.io/badge/Fyers-API%20v3-green.svg)](https://myapi.fyers.in/)
 
-> **Professional-grade algorithmic trading bot for Indian stock markets**  
-> Built for the Fyers API with real-time scanning, AI analysis, risk management, and automated execution.
+> **Automated signal generation, risk management, and optional order execution
+> for NSE/BSE markets via the Fyers API.**
 
 ---
 
-## � Quick Start (For Beginners)
-
-**New to this project? Start here!**
-
-### What Does This Bot Do?
-1. **Scans** Indian stock markets automatically
-2. **Analyzes** stocks using technical indicators (RSI, patterns, volume)
-3. **Generates** BUY/SELL signals with confidence scores
-4. **Simulates** trades (paper mode = fake money, 100% safe)
-5. **Tracks** all performance automatically
-
-### 5-Minute Setup
+## ⚡ Quick Start (5 minutes)
 
 ```bash
-# 1. Install requirements
-pip install -r requirements.txt
-
-# 2. Copy and edit config
-copy config\trading_profile.example.yml config\trading_profile.yml
-notepad config\trading_profile.yml
-# Add your Fyers Client ID and Secret Key
-
-# 3. Login to Fyers
-python -m cli.main login
-
-# 4. Start paper trading (SAFE - fake money)
-python -m cli.main start-bot --paper
-```
-
-**That's it!** The bot is now running and scanning 19 stocks every minute.
-
-### 📚 Documentation Files
-- **[QUICKSTART.md](QUICKSTART.md)** - Get started in 5 minutes
-- **[USAGE_GUIDE.md](USAGE_GUIDE.md)** - Complete feature documentation
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical system design
-- **[SKILL.md](SKILL.md)** - Feature reference and examples
-
----
-
-## �📋 Table of Contents
-
-- [Overview](#overview)
-- [Key Features](#key-features)
-- [Tech Stack](#tech-stack)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Project Structure](#project-structure)
-- [CLI Commands](#cli-commands)
-- [Scoring System](#scoring-system)
-- [Risk Management](#risk-management)
-- [Gemini CLI Integration](#gemini-cli-integration)
-- [Contributing](#contributing)
-- [License](#license)
-- [Disclaimer](#disclaimer)
-
----
-
-## 🎯 Overview
-
-TradingBot is a comprehensive algorithmic trading system designed for Indian equity markets. It combines technical analysis, pattern recognition, and risk management to generate actionable trading signals with probability-based confidence scores.
-
-### What Makes It Different
-
-| Feature | TradingBot | Typical Bots |
-|---------|-----------|--------------|
-| **Signal Quality** | Multi-factor scoring (RSI, Trend, Volume, Pattern) | Single indicator |
-| **Risk Control** | Position sizing, stop-loss, daily limits | Basic order placement |
-| **Live Trading** | Real-time streaming with auto-execution | Batch-only |
-| **AI Integration** | Gemini CLI commands for analysis | None |
-| **Tracking** | Complete trade/position/signal history | No persistence |
-| **Modes** | Paper trading, backtesting, live | Live only |
-
----
-
-## ✨ Key Features
-
-### Market Analysis
-- **Multi-Stock Scanning** — Scan single symbols, custom lists, or entire indices (NIFTY50, BANKNIFTY, FINNIFTY)
-- **Technical Indicators** — RSI, SMA (20/50), Volume Analysis
-- **Pattern Detection** — Flags, Triangles, Pennants with confidence scoring
-- **Smart Money Concepts** — SMC-based bias detection on higher timeframes
-
-### Signal Generation
-- **Probability Scoring** — Weighted algorithm (RSI 30%, Trend 30%, Volume 20%, Pattern 20%)
-- **A-F Evaluation** — Comprehensive signal quality assessment
-- **Multi-Timeframe Analysis** — LTF (5m) + HTF (15m) confirmation
-- **Confidence Thresholds** — Auto-trading eligible at ≥75%
-
-### Execution & Risk
-- **Live Streaming** — Real-time data with configurable polling (5s-300s)
-- **Auto-Trading** — Optional automatic order placement for high-confidence signals
-- **Position Sizing** — Percentage-based allocation (default: 10% per trade)
-- **Stop-Loss** — Automatic SL calculation (default: 2% from entry)
-- **Daily Limits** — Max 5 trades/day, 3 concurrent positions
-
-### Tracking & Analytics
-- **Trade History** — Complete P&L tracking with markdown exports
-- **Position Monitor** — Real-time unrealized P&L updates
-- **Signal Archive** — Historical signal performance analysis
-- **Daily Reports** — Automated P&L summaries
-
-### AI Integration
-- **Gemini CLI Commands** — Natural language trading analysis
-- **AI Signal Explanation** — Understand why signals fire
-- **Strategy Suggestions** — AI-powered trading recommendations
-
----
-
-## 🛠️ Tech Stack
-
-### Core Technologies
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **Language** | Python 3.9+ | Core runtime |
-| **CLI Framework** | Typer | Command-line interface |
-| **Data Analysis** | Pandas, NumPy | Technical calculations |
-| **HTTP Client** | Requests | API communication |
-| **Encryption** | Cryptography | Secure token storage |
-| **Formatting** | Rich | Terminal output |
-
-### Trading & Market Data
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **Broker API** | Fyers API v3 | Order execution & market data |
-| **Data Format** | Pandas DataFrame | Time-series analysis |
-| **Indicators** | TA-Lib patterns | Chart pattern detection |
-
-### AI & Automation
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **AI Commands** | Gemini CLI | Natural language trading |
-| **Task Runner** | Custom scheduler | Background jobs |
-| **Health Checks** | Python scripts | System verification |
-
-### Configuration & Storage
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **Config Format** | YAML + INI | Profile & system settings |
-| **Data Storage** | Markdown + TSV | Human-readable tracking |
-| **Logging** | Structured JSON | Machine-parseable logs |
-
----
-
-## 🚀 Installation
-
-### Prerequisites
-
-- Python 3.9 or higher
-- Fyers trading account with API access
-- Windows/Linux/macOS
-
-### Step-by-Step Setup
-
-```bash
-# 1. Clone the repository
+# 1 — Clone
 git clone https://github.com/Shivaji24-get/TradingBot.git
 cd TradingBot
 
-# 2. Create virtual environment
+# 2 — Virtual environment
 python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 
-# On Windows:
-venv\Scripts\activate
-
-# On macOS/Linux:
-source venv/bin/activate
-
-# 3. Install dependencies
+# 3 — Install dependencies
 pip install -r requirements.txt
 
-# 4. Verify installation
-python -m cli.main --help
-```
+# 4 — Set API credentials (NEVER commit these)
+export FYERS_CLIENT_ID="your_client_id"      # from https://myapi.fyers.in/
+export FYERS_SECRET_KEY="your_secret_key"
 
----
+# 5 — Create your config
+cp config/trading_profile.example.yml config/trading_profile.yml
+# Edit the file to add your symbol list and risk settings
 
-## ⚙️ Configuration
+# 6 — Initialise data files
+python scripts/init_tracking.py
 
-### 1. Fyers API Credentials
-
-Create `config.ini` in the project root:
-
-```ini
-[DEFAULT]
-client_id = YOUR_FYERS_CLIENT_ID
-secret_key = YOUR_FYERS_SECRET_KEY
-redirect_uri = http://127.0.0.1:5000/fyers/callback
-```
-
-**Get your credentials:**
-1. Login to [Fyers API Dashboard](https://myapi.fyers.in/)
-2. Create an app with "Trading" permission
-3. Copy Client ID and Secret Key
-
-### 2. Trading Profile (Optional)
-
-Create `config/trading_profile.yml` for personalized settings:
-
-```yaml
-trader_identity:
-  name: "Your Name"
-  style: "swing"  # scalper, daytrader, swing, position
-  experience: "intermediate"  # novice, intermediate, advanced
-
-risk_profile:
-  max_portfolio_heat: 6.0  # % of capital at risk
-  max_position_size: 20.0  # % per position
-  max_daily_loss: 3.0      # % of capital
-  max_concurrent_positions: 3
-  min_risk_reward_ratio: 1.5
-
-trading_preferences:
-  default_symbols:
-    - "NSE:RELIANCE-EQ"
-    - "NSE:TCS-EQ"
-    - "NSE:HDFCBANK-EQ"
-  default_timeframe: "D"
-  auto_trading: false
-  confirmation_required: true
-```
-
-### 3. Authenticate
-
-```bash
+# 7 — Authenticate with Fyers
 python -m cli.main login
-```
 
-This opens a browser for Fyers OAuth. Copy the auth code from the redirect URL.
+# 8 — Verify everything is ready
+python scripts/health_check.py
 
----
-
-## 📖 Usage
-
-### Basic Scanning
-
-```bash
-# Scan a single stock
-python -m cli.main scan --symbol NSE:RELIANCE-EQ
-
-# Scan multiple stocks
-python -m cli.main scan --symbols "NSE:RELIANCE-EQ,NSE:TCS-EQ,NSE:INFY-EQ"
-
-# Scan an index (top 10 by score)
-python -m cli.main scan --index NIFTY50 --top 10
-
-# Custom timeframe and candle limit
-python -m cli.main scan --index BANKNIFTY --timeframe D --limit 100
-```
-
-### Live Trading Mode
-
-```bash
-# Live scan with 5-second intervals
-python -m cli.main scan --symbol NSE:SBIN-EQ --live --interval 5
-
-# Live scan with auto-trading (≥75% confidence)
-python -m cli.main scan --symbol NSE:RELIANCE-EQ --live --auto-trade --threshold 75
-
-# Monitor multiple symbols
-python -m cli.main scan --symbols "NSE:SBIN-EQ,NSE:ICICIBANK-EQ" --live --interval 10
-```
-
-### AI-Powered Analysis
-
-```bash
-# Deep analysis with pattern detection
-python -m cli.main analyze --symbol NSE:RELIANCE-EQ
-
-# Evaluate signal quality (A-F scoring)
-python -m cli.main evaluate --symbol NSE:INFY-EQ
-
-# Compare multiple setups
-python -m cli.main compare --symbols "RELIANCE,TCS,SBIN"
-```
-
-### Bot Management
-
-```bash
-# Start trading bot (paper mode)
+# 9 — Start paper trading (safe, no real money)
 python -m cli.main start-bot --paper
-
-# Start trading bot (live mode)
-python -m cli.main start-bot --live
-
-# Check bot status
-python -m cli.main status --detailed
-
-# View risk metrics
-python -m cli.main risk --portfolio
-
-# View trading history
-python -m cli.main tracker --period today
-```
-
-### Order Management
-
-```bash
-# Place market order
-python -m cli.main place-order --symbol NSE:RELIANCE-EQ --side BUY --qty 10
-
-# Place limit order
-python -m cli.main place-order --symbol NSE:SBIN-EQ --side SELL --qty 5 --type LIMIT --price 1080.50
-
-# Check order status
-python -m cli.main order-status --order-id 230415000000001
-
-# View portfolio
-python -m cli.main get-holdings
-python -m cli.main get-funds
 ```
 
 ---
 
-## 📁 Project Structure
+## 📋 Table of Contents
+
+- [Architecture](#architecture)
+- [Features](#features)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [CLI Commands](#cli-commands)
+- [Workflow](#workflow)
+- [Risk Management](#risk-management)
+- [Scoring System](#scoring-system)
+- [Troubleshooting](#troubleshooting)
+- [Security](#security)
+
+---
+
+## Architecture
 
 ```
 TradingBot/
-├── 📁 api/                      # API clients and endpoints
-│   ├── __init__.py
-│   ├── client.py             # Fyers API client wrapper
-│   ├── market_data.py        # Historical/quotes data
-│   ├── orders.py             # Order placement/management
-│   ├── funds.py              # Account balance
-│   ├── holdings.py           # Portfolio positions
-│   └── profile.py            # User profile data
-│
-├── 📁 auth/                     # Authentication
-│   ├── __init__.py
-│   └── token_manager.py      # OAuth token encryption/storage
-│
-├── 📁 cli/                      # Command-line interface
-│   ├── __init__.py
-│   ├── main.py               # CLI entry point (Typer)
-│   └── commands.py           # All CLI command implementations
-│
-├── 📁 core/                     # Core workflow modules
-│   ├── __init__.py
-│   ├── pipeline.py           # Trading workflow orchestration
-│   ├── tracker.py            # Trade/position/signal tracking
-│   ├── metrics.py            # Performance analytics
-│   ├── scheduler.py          # Job scheduling
-│   ├── retry.py              # API retry mechanisms
-│   ├── state_machine.py      # Trading state management
-│   └── gemini_advisor.py     # AI integration layer
-│
-├── 📁 strategies/               # Trading strategies
-│   ├── __init__.py
-│   ├── scanner.py            # Multi-stock scanner
-│   ├── signal_scorer.py      # Probability scoring
-│   ├── pattern_detector.py   # Chart pattern detection
-│   ├── indicators.py         # Technical indicators
-│   ├── smart_money.py        # SMC strategy
-│   ├── order_executor.py     # Auto-trading execution
-│   ├── live_engine.py        # Real-time streaming
-│   ├── risk_manager.py       # Risk controls
-│   └── parser.py             # Strategy config parser
-│
-├── 📁 utils/                    # Utilities
-│   ├── __init__.py
-│   ├── config.py             # Configuration loaders
-│   ├── logger.py             # Structured logging
-│   ├── helpers.py            # Helper functions
-│   └── exporter.py           # Data export (CSV/JSON)
-│
-├── 📁 config/                   # Configuration files
-│   └── trading_profile.yml   # User trading profile
-│
-├── 📁 data/                     # User data (gitignored)
-│   ├── trades.md             # Trade history
-│   ├── positions.md          # Position log
-│   └── signals.md            # Signal history
-│
-├── 📁 modes/                    # Gemini CLI modes
-│   ├── _shared.md            # Shared context
-│   ├── scan.md               # Scanning mode
-│   ├── analyze.md            # Analysis mode
-│   ├── evaluate.md           # Signal evaluation
-│   ├── risk.md               # Risk assessment
-│   ├── start.md              # Bot startup
-│   └── ...                   # Additional modes
-│
-├── 📁 .gemini/                  # Gemini CLI commands
-│   └── commands/             # TOML command definitions
-│
-├── 📁 .opencode/                # OpenCode commands
-│   └── commands/             # MD command definitions
-│
-├── 📁 scripts/                  # Automation scripts
-│   ├── health_check.py       # System verification
-│   ├── daily_report.py       # Daily P&L reports
-│   └── verify_pipeline.py    # Pipeline integrity
-│
-├── 📁 tests/                    # Test suite
-├── 📁 logs/                     # Log files (gitignored)
-├── 📁 output/                   # Generated reports (gitignored)
-│
-├── 📄 config.ini                # API credentials (gitignored)
-├── 📄 strategy.json             # Strategy configuration
-├── 📄 requirements.txt          # Python dependencies
-├── 📄 ARCHITECTURE.md           # System architecture
-├── 📄 DATA_CONTRACT.md          # Data management rules
-├── 📄 GEMINI.md                 # Gemini CLI context
-├── 📄 WORKFLOW.md               # End-to-end workflow (see below)
-└── 📄 README.md                 # This file
+├── api/              Fyers API wrappers (data, orders, funds)
+├── auth/             OAuth2 token management (encrypted storage)
+├── cli/              Typer-based CLI (20+ commands)
+├── core/
+│   ├── pipeline.py   Orchestrates the per-symbol trading cycle
+│   ├── tracker.py    Appends trades/signals to data/*.md files
+│   ├── metrics.py    Calculates Sharpe, drawdown, win rate
+│   ├── scheduler.py  Market-hours-aware job runner
+│   └── state_machine.py  IDLE → SCANNING → ORDER_PENDING → …
+├── strategies/
+│   ├── scanner.py        Multi-symbol scanning (historical + SMC)
+│   ├── smart_money.py    3-tier SMC: HTF bias → MTF setup → LTF entry
+│   ├── signal_scorer.py  RSI(30%) + Trend(30%) + Volume(20%) + Pattern(20%)
+│   ├── fvg_detector.py   Fair Value Gaps
+│   ├── order_block.py    Institutional order zones
+│   ├── mss_detector.py   Market Structure Shifts / CHoCH
+│   ├── liquidity.py      PDH/PDL sweep detection
+│   └── live_smc_engine.py  Real-time scanning with auto-trade
+├── utils/            Config loading, logging, scheduling helpers
+├── scripts/          health_check, init_tracking, daily_report
+└── config/
+    ├── trading_profile.example.yml   ← committed (template)
+    └── trading_profile.yml           ← NOT committed (your secrets)
 ```
 
 ---
 
-## 🖥️ CLI Commands Reference
+## Features
 
-### Core Trading Commands
-
-| Command | Description | Example |
-|---------|-------------|---------|
-| `scan` | Scan stocks for trading signals | `python -m cli.main scan --index NIFTY50` |
-| `analyze` | Deep technical analysis of a symbol | `python -m cli.main analyze --symbol NSE:RELIANCE-EQ` |
-| `evaluate` | Evaluate signal quality (A-F scoring) | `python -m cli.main evaluate --symbol NSE:INFY-EQ` |
-| `compare` | Compare multiple trade setups | `python -m cli.main compare --symbols "RELIANCE,TCS"` |
-
-### Bot Management Commands
-
-| Command | Description | Example |
-|---------|-------------|---------|
-| `start-bot` | Start the trading bot | `python -m cli.main start-bot --paper` |
-| `stop-bot` | Stop the trading bot | `python -m cli.main stop-bot` |
-| `status` | Check bot status & positions | `python -m cli.main status --detailed` |
-| `risk` | Risk assessment | `python -m cli.main risk --portfolio` |
-| `tracker` | View trading activity | `python -m cli.main tracker --period today` |
-
-### Order Commands
-
-| Command | Description | Example |
-|---------|-------------|---------|
-| `place-order` | Place a trade | `python -m cli.main place-order --symbol SYM --side BUY --qty 10` |
-| `order-status` | Check order status | `python -m cli.main order-status --order-id ID` |
-| `get-holdings` | View portfolio | `python -m cli.main get-holdings` |
-| `get-funds` | Check balance | `python -m cli.main get-funds` |
-
-### Scan Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--symbol` | Single symbol | - |
-| `--symbols` | Comma-separated list | - |
-| `--index` | Index group | - |
-| `--timeframe` | Candle timeframe | `D` |
-| `--limit` | Number of candles | 100 |
-| `--top` | Show top N results | 5 |
-| `--live` | Enable live mode | False |
-| `--interval` | Polling interval (seconds) | 5 |
-| `--auto-trade` | Auto-place orders | False |
-| `--threshold` | Minimum score for trading | 75 |
+| Category | Capability |
+|----------|-----------|
+| **Scanning** | Single symbol, custom list, or full index (NIFTY50, BANKNIFTY) |
+| **Strategies** | RSI+SMA momentum, Smart Money Concepts (HTF→MTF→LTF), chart patterns |
+| **SMC** | FVG, Order Blocks, Liquidity sweeps, MSS/CHoCH, Harmonic patterns |
+| **Scoring** | 0–100 probability score with component breakdown |
+| **Risk** | Position sizing, stop-loss, daily loss limit, max positions |
+| **Modes** | Paper (safe default), Live (explicit opt-in) |
+| **Tracking** | trades.md, positions.md, signals.md (append-only) |
+| **Reporting** | Daily P&L, win rate, Sharpe ratio, max drawdown |
+| **AI** | Optional Google Gemini signal explanation & validation |
+| **Alerts** | Telegram and email notifications |
 
 ---
 
-## 🎯 Scoring System
+## Installation
 
-### Probability Calculation
+### Prerequisites
 
-| Component | Weight | Calculation |
-|-----------|--------|-------------|
-| **RSI** | 30% | Distance from oversold/overbought thresholds |
-| **Trend** | 30% | SMA alignment (bullish/bearish) |
-| **Volume** | 20% | Volume spike vs average |
-| **Pattern** | 20% | Pattern confidence score |
+- Python 3.9+
+- Fyers trading account with API access ([create app](https://myapi.fyers.in/))
+- Chrome browser (for Selenium-based OAuth login)
 
-### Score Thresholds
+### Production install
 
-| Score | Level | Action |
+```bash
+pip install -r requirements.txt
+```
+
+### Development install (includes Selenium, test tools, AI)
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+```
+
+---
+
+## Configuration
+
+All settings live in `config/trading_profile.yml` (gitignored).
+Copy the template and edit:
+
+```bash
+cp config/trading_profile.example.yml config/trading_profile.yml
+```
+
+### Key sections
+
+```yaml
+risk_profile:
+  risk_per_trade: 0.01        # 1% of capital per trade (start here)
+  max_positions: 5
+  max_daily_loss: 0.03        # Stop trading at 3% daily loss
+  default_stop_loss_pct: 1.5
+
+trading_preferences:
+  default_symbols:
+    - "NSE:NIFTY50-INDEX"
+    - "NSE:RELIANCE-EQ"
+  auto_trading:
+    enabled: false            # KEEP FALSE until weeks of paper trading done
+    paper_trading: true
+
+api:
+  fyers:
+    client_id: "${FYERS_CLIENT_ID}"   # Set as env var
+    secret_key: "${FYERS_SECRET_KEY}" # Set as env var
+```
+
+---
+
+## CLI Commands
+
+```bash
+# Authentication
+python -m cli.main login                          # Fyers OAuth
+
+# Market scanning
+python -m cli.main scan --index NIFTY50           # Scan NIFTY50 stocks
+python -m cli.main scan --symbol NSE:RELIANCE-EQ  # Single symbol
+python -m cli.main scan --index BANKNIFTY --smc   # SMC 3-tier scan
+python -m cli.main scan --symbol NSE:SBIN-EQ --live --interval 10  # Live
+
+# Analysis
+python -m cli.main analyze --symbol NSE:TCS-EQ
+python -m cli.main evaluate --symbol NSE:HDFCBANK-EQ
+python -m cli.main compare --symbols "NSE:RELIANCE-EQ,NSE:TCS-EQ,NSE:INFY-EQ"
+
+# Bot management
+python -m cli.main start-bot --paper              # Safe paper trading
+python -m cli.main start-bot --live               # Real money (caution!)
+python -m cli.main status --detailed
+python -m cli.main positions
+
+# Performance
+python -m cli.main metrics --category all --period 30d
+python -m cli.main tracker --period week
+python -m cli.main report --format markdown
+
+# Account
+python -m cli.main get-funds
+python -m cli.main get-holdings
+```
+
+---
+
+## Workflow
+
+```
+Every {scan_interval} seconds (default: 60 s):
+
+  is_market_open()? ──NO──► sleep ──► repeat
+        │
+       YES
+        │
+  For each symbol:
+    1. get_historical_data()   [1H trend candles]
+    2. get_historical_data()   [5M entry candles]   ← dual TF
+    3. generate_signal()       [RSI + SMA + volume + patterns]
+    4. SMC analysis            [HTF bias → MTF setup → LTF entry]
+    5. risk_check()            [score ≥ 75, heat ≤ 6%, limits OK]
+    6. paper/live order        [simulated or real]
+    7. tracker.add_signal()    [append → data/signals.md]
+```
+
+---
+
+## Risk Management
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `risk_per_trade` | 1% | Max capital loss per trade |
+| `max_positions` | 5 | Concurrent positions |
+| `max_daily_loss` | 3% | Daily stop-trading threshold |
+| `default_stop_loss_pct` | 1.5% | Default SL distance |
+| `default_take_profit_pct` | 4.5% | Default TP distance |
+| `min_risk_reward_ratio` | 2.0 | Minimum R:R to take trade |
+
+---
+
+## Scoring System
+
+Each signal receives a weighted score (0–100):
+
+| Component | Weight | Condition |
+|-----------|--------|-----------|
+| RSI | 30 pts | < 30 (BUY) or > 70 (SELL) = full score |
+| Trend (SMA) | 30 pts | SMA20 > SMA50 = bullish trend |
+| Volume | 20 pts | Current > 1.5× average |
+| Pattern | 20 pts | Flag/triangle/pennant detected |
+
+**Score thresholds:**
+
+| Range | Grade | Action |
 |-------|-------|--------|
-| ≥75% | 🟢 High Confidence | Auto-trading eligible |
-| 50-74% | 🟡 Medium Confidence | Manual review recommended |
-| <50% | 🔴 Low Confidence | Skip or paper trade |
+| 85–100 | Strong | Execute at full size |
+| 70–84 | Good | Execute at standard size |
+| 50–69 | Moderate | Paper trade or reduce size |
+| 0–49 | Weak | Skip |
 
 ---
 
-## 🛡️ Risk Management
+## Troubleshooting
 
-### Built-in Protections
-
-| Control | Default | Description |
-|---------|---------|-------------|
-| **Position Size** | 10% per trade | Max capital allocation per position |
-| **Stop Loss** | 2% from entry | Automatic SL calculation |
-| **Daily Loss** | 3% of capital | Stop trading if exceeded |
-| **Max Trades** | 5 per day | Daily trade limit |
-| **Max Positions** | 3 concurrent | Position count limit |
-| **Portfolio Heat** | 6% max | Total unrealized risk |
-
-### Pre-Trade Checks
-
-Every trade validates:
-- ✅ Signal score ≥ threshold
-- ✅ Risk:Reward ≥ minimum (1.5:1)
-- ✅ Daily loss limit not exceeded
-- ✅ Max positions not reached
-- ✅ Market is open
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `AttributeError: 'SMCResult' has no attribute 'mtf_aligned'` | Old smart_money.py | Apply fix from ANALYSIS_REPORT.md |
+| `TypeError: 'tzinfo' is not callable` | `tz` variable shadowing | Apply scheduler.py fix |
+| `KeyError: 'mtf_aligned'` in display | Missing key in scanner result | Apply scanner.py fix |
+| `Not logged in` | Token expired | `python -m cli.main login` |
+| `Credentials missing or placeholder` | Env vars not set | `export FYERS_CLIENT_ID=...` |
+| `Algo orders not allowed (code -50)` | Standard app ID | Contact Fyers for algo-enabled app |
+| `No signals for hours` | Market sideways or threshold too high | Lower `confidence_threshold` in YAML |
 
 ---
 
-## 🤖 Gemini CLI Integration
+## Security
 
-TradingBot includes natural language AI commands through Gemini CLI:
+See [SECURITY.md](SECURITY.md) for:
+- Credential rotation steps (required if you cloned the original repo)
+- Environment variable setup
+- Secure local-only config file usage
+- What is and is NOT committed to Git
 
-```bash
-# Analyze a trading setup
-gemini /trading-bot-analyze "RELIANCE showing flag pattern at 1430"
-
-# Scan for opportunities
-gemini /trading-bot-scan "Find bullish setups in NIFTY50"
-
-# Evaluate signal quality
-gemini /trading-bot-evaluate "INFY BUY at 1181 with RSI 27"
-
-# Check bot status
-gemini /trading-bot-status
-
-# Risk assessment
-gemini /trading-bot-risk "Portfolio heat check"
-
-# Full bot control
-gemini /trading-bot-start --paper
-gemini /trading-bot-stop
-```
-
-**Setup required:** Install [Gemini CLI](https://github.com/aquilax/gemini-cli) and navigate to the TradingBot directory.
+**TL;DR:** Never commit `config/trading_profile.yml`, `token.key`, or `token.enc`.
+Always set credentials via env vars: `FYERS_CLIENT_ID` and `FYERS_SECRET_KEY`.
 
 ---
 
-## 🤝 Contributing
+## Disclaimer
 
-Contributions are welcome! Follow these steps:
-
-```bash
-# 1. Fork the repository
-
-# 2. Create feature branch
-git checkout -b feature/your-feature-name
-
-# 3. Make changes and commit
-git commit -m "feat: Add your feature description"
-
-# 4. Push and create PR
-git push origin feature/your-feature-name
-```
-
-### Commit Message Format
-
-- `feat:` — New feature
-- `fix:` — Bug fix
-- `docs:` — Documentation
-- `refactor:` — Code restructuring
-- `test:` — Test additions
-
----
-
-## 📄 License
-
-This project is licensed under the **MIT License** — see [LICENSE](LICENSE) file.
-
----
-
-## ⚠️ Disclaimer
-
-**IMPORTANT: Trading involves substantial risk of loss.**
-
-- This software is for **educational and research purposes only**
-- **Past performance does not guarantee future results**
+This software is for **educational and research purposes only**.
+- Trading involves substantial risk of loss
+- Past performance does not guarantee future results
 - Always test with **paper trading** before using real money
-- Signals are algorithmic and **do not guarantee profits**
+- This bot does **not** provide financial advice
 - You are **solely responsible** for your trading decisions
-- This bot **does not provide financial advice**
-
-By using this software, you acknowledge these risks and agree to use it at your own risk.
 
 ---
 
-## 📚 Additional Documentation
+## License
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — System architecture & design
-- [DATA_CONTRACT.md](DATA_CONTRACT.md) — Data management rules
-- [WORKFLOW.md](WORKFLOW.md) — End-to-end workflow
-- [GEMINI.md](GEMINI.md) — Gemini CLI integration
-
----
-
-## 🙏 Acknowledgments
-
-- [Fyers API](https://myapi.fyers.in/) — Market data & trading infrastructure
-- [Rich](https://rich.readthedocs.io/) — Terminal formatting
-- [Typer](https://typer.tiangolo.com/) — CLI framework
-- [Gemini CLI](https://github.com/aquilax/gemini-cli) — AI integration
-
----
-
-**Happy Trading! 📈 Trade Smart, Trade Safe.**
+MIT — see [LICENSE](LICENSE)

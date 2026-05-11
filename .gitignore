@@ -1,12 +1,15 @@
-# Byte-compiled / optimized / DLL files
+# =============================================================================
+# TradingBot .gitignore
+# SECURITY: All credentials, tokens, and keys MUST stay out of the repository
+# =============================================================================
+
+# -------------------
+# Python
+# -------------------
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -26,16 +29,12 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Unit test / coverage reports
+# -------------------
+# Testing
+# -------------------
 htmlcov/
 .tox/
 .nox/
@@ -49,13 +48,14 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
-# Jupyter Notebook
+# -------------------
+# Jupyter
+# -------------------
 .ipynb_checkpoints
 
-# pyenv
-.python-version
-
-# Environments
+# -------------------
+# Virtual environments
+# -------------------
 .env
 .venv
 env/
@@ -65,81 +65,63 @@ env.bak/
 venv.bak/
 fyers-env/
 
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# IDE
+# -------------------
+# IDEs
+# -------------------
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS
+# -------------------
+# OS artefacts
+# -------------------
 .DS_Store
 Thumbs.db
 
-# Project specific - DO NOT COMMIT
-tokens.json
+# =============================================================================
+# SECURITY – CRITICAL: these files contain credentials and MUST NOT be committed
+# =============================================================================
 config.ini
-config.json
-*.log
-*.csv
-trades/
-data/
+config copy.ini
+token.enc
+token.key
+*.key
+*.pem
+*.enc
+secrets/
+.secrets/
+.env.local
+.env.production
+
+# Fyers credentials / session data
+tokens.json
 session/
 
-# Selenium
+# =============================================================================
+# User data – runtime files that are personal / machine-specific
+# =============================================================================
+data/*.md
+data/*.tsv
+!data/.gitkeep
+
+logs/
+output/
+reports/
+batch/
+
+# Large media files (demo GIFs etc.)
+*.mp4
+demo.gif
+
+# Selenium drivers
 driver/
 chromedriver
 geckodriver
 
-# SECURITY: Encryption keys and tokens must NEVER be committed
-token.key
-token.enc
-*.key
-*.pem
-secrets/
-.secrets/
-
-# Demo files (optional - include if small)
-# demo.gif
-# demo.mp4
-
-# Create .gitignore
-echo "token.enc
-config.ini
-config copy.ini
-*.log
-logs/
-output/
-tmp/
-__pycache__/
-*.pyc
-.DS_Store
-data/*.md
-!data/.gitkeep
-reports/
-batch/
-.vscode/
-.idea/" > .gitignore
-
-# Add and push .gitignore
-git add .gitignore
-git commit -m "chore: Add .gitignore for sensitive files and logs"
-git push origin main
+# =============================================================================
+# NOTE: config/trading_profile.yml contains API credentials.
+#       Commit ONLY config/trading_profile.example.yml (template without secrets).
+# =============================================================================
+config/trading_profile.yml

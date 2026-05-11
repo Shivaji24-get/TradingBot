@@ -1,27 +1,37 @@
+# =============================================================================
+# TradingBot – Python dependencies
+# =============================================================================
+# Install: pip install -r requirements.txt
+#
+# Dev/optional dependencies are in requirements-dev.txt
+# =============================================================================
+
+# --- Broker API ---
 fyers-apiv3>=3.1.0
+
+# --- CLI & terminal UI ---
 typer>=0.12.0
 rich>=13.0.0
 
-# Security
+# --- Security ---
 cryptography>=41.0.0
 
-# Scheduling
-schedule>=1.2.0
-python-dateutil>=2.8.0
-
-# Authentication
-selenium>=4.0.0
-webdriver-manager>=4.0.0
-
-# Core Dependencies
+# --- Data processing ---
 pandas>=2.0.0
 numpy>=1.24.0
 
-# Enhanced Logging (optional)
-python-json-logger>=2.0.0
+# --- Scheduling & time ---
+schedule>=1.2.0
+python-dateutil>=2.8.0
 
-# Configuration
+# --- Configuration ---
 pyyaml>=6.0.0
 
-# Optional: For creating demo GIFs
-moviepy>=1.0.0
+# --- HTTP (for notifications) ---
+requests>=2.31.0
+
+# --- Optional: structured logging ---
+# python-json-logger>=2.0.0   # Uncomment if structured_logging: true in profile
+
+# --- Optional: Gemini AI integration ---
+# google-generativeai>=0.3.0  # Uncomment and set GEMINI_API_KEY to enable AI features

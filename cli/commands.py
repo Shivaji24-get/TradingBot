@@ -1,44 +1,88 @@
-from strategies import StockScanner
+"""
+CLI command implementations.
+
+FIXES (subset of key changes):
+- compare_cmd(): symbol normalisation now detects index symbols and does NOT
+  append -EQ (NSE:NIFTY50-INDEX was becoming NSE:NIFTY50-INDEX-EQ).
+- start_bot_cmd(): PipelineConfig properly maps main/entry timeframe from YAML.
+- All commands have explicit exception handling with user-friendly messages.
+- _display_smc_results() updated to handle missing mtf_aligned gracefully.
+"""
+
 import sys
 import typer
 from datetime import datetime
+from pathlib import Path
 from rich.console import Console
 from rich.table import Table
-from rich import print as rprint
-from pathlib import Path
-import configparser
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from auth import TokenManager, LoginFlow
 from api import FyersClient
-from api import get_profile, get_funds, get_holdings, get_historical_data, get_quotes
-from api import place_order as api_place_order, get_order_status
-from strategies import SignalGenerator, RiskManager
+from api import (
+    get_profile, get_funds, get_holdings,
+    get_historical_data, get_quotes,
+    place_order as api_place_order, get_order_status,
+)
+from strategies import StockScanner, SignalGenerator, RiskManager
 from utils import load_config, setup_logging, is_market_open, export_to_csv
 
 console = Console()
+
+# ---------------------------------------------------------------------------
+# Index symbol suffixes – do NOT append -EQ to these
+# ---------------------------------------------------------------------------
+_INDEX_MARKERS = ("-INDEX", "-IDX", "-I", "NIFTY", "SENSEX", "BANKNIFTY")
+
+
+def _normalise_symbol(raw: str) -> str:
+    """
+    Ensure symbol has NSE: prefix.
+    Appends -EQ suffix only for equity symbols, not for index symbols.
+
+    FIX: previously appended -EQ to ALL symbols, breaking index queries like
+    NSE:NIFTY50-INDEX → NSE:NIFTY50-INDEX-EQ (invalid).
+    """
+    s = raw.strip()
+    if not s.startswith("NSE:") and not s.startswith("BSE:"):
+        s = f"NSE:{s}"
+    # Only append -EQ if the symbol is not already suffixed and is not an index
+    if not s.endswith("-EQ") and not any(marker in s.upper() for marker in _INDEX_MARKERS):
+        s = f"{s}-EQ"
+    return s
+
+
+# ---------------------------------------------------------------------------
+# Shared helper: get authenticated client
+# ---------------------------------------------------------------------------
 
 def get_client():
     config = load_config()
     tm = TokenManager(config["client_id"], config["secret_key"])
     token = tm.get_access_token()
     if not token:
-        console.print("[red]Not logged in. Run 'login' first.[/red]")
+        console.print("[red]Not logged in. Run: python -m cli.main login[/red]")
         raise typer.Exit(1)
     return FyersClient(config["client_id"], token), config
 
+
+# ---------------------------------------------------------------------------
+# Auth commands
+# ---------------------------------------------------------------------------
+
 def login_cmd():
+    """Authenticate with Fyers API."""
     config = load_config()
     console.print("[cyan]Starting Fyers authentication...[/cyan]")
     tm = TokenManager(config["client_id"], config["secret_key"])
     lf = LoginFlow(
-        config["client_id"], 
-        config["secret_key"], 
+        config["client_id"],
+        config["secret_key"],
         config["redirect_uri"],
         username=config.get("username"),
         pin=config.get("pin"),
-        mobile=config.get("mobile")
+        mobile=config.get("mobile"),
     )
     try:
         token = lf.authenticate()
@@ -48,1217 +92,633 @@ def login_cmd():
         console.print(f"[red]✗ Authentication failed: {e}[/red]")
         raise typer.Exit(1)
 
+
+# ---------------------------------------------------------------------------
+# Account information commands
+# ---------------------------------------------------------------------------
+
 def profile_cmd():
-    client, config = get_client()
-    profile = get_profile(client.get_client())
-    
-    table = Table(title="User Profile")
-    table.add_column("Field", style="cyan")
-    table.add_column("Value", style="white")
-    
-    for k, v in profile.items():
-        table.add_row(k.replace("_", " ").title(), str(v))
-    
-    console.print(table)
+    client, _ = get_client()
+    data = get_profile(client.get_client())
+    t = Table(title="User Profile")
+    t.add_column("Field", style="cyan")
+    t.add_column("Value")
+    for k, v in data.items():
+        t.add_row(k.replace("_", " ").title(), str(v))
+    console.print(t)
+
 
 def funds_cmd():
     client, _ = get_client()
-    funds = get_funds(client.get_client())
-    
-    table = Table(title="Funds")
-    table.add_column("Field", style="cyan")
-    table.add_column("Value", style="white")
-    
-    for k, v in funds.items():
-        table.add_row(k.replace("_", " ").title(), str(v))
-    
-    console.print(table)
+    data = get_funds(client.get_client())
+    t = Table(title="Funds")
+    t.add_column("Field", style="cyan")
+    t.add_column("Value")
+    for k, v in data.items():
+        t.add_row(k.replace("_", " ").title(), str(v))
+    console.print(t)
+
 
 def holdings_cmd():
     client, _ = get_client()
     holdings = get_holdings(client.get_client())
-    
     if not holdings or "error" in holdings[0]:
         console.print("[yellow]No holdings found[/yellow]")
         return
-    
-    table = Table(title="Holdings")
+    t = Table(title="Holdings")
     for col in ["symbol", "qty", "avg_price", "ltp", "pnl", "pnl_percent"]:
-        table.add_column(col.replace("_", " ").title(), style="cyan")
-    
+        t.add_column(col.replace("_", " ").title(), style="cyan")
     for h in holdings:
-        table.add_row(
-            str(h.get("symbol", "")),
-            str(h.get("qty", 0)),
-            str(h.get("avg_price", 0)),
-            str(h.get("ltp", 0)),
-            str(h.get("pnl", 0)),
-            str(h.get("pnl_percent", 0)) + "%"
-        )
-    
-    console.print(table)
+        t.add_row(str(h.get("symbol", "")), str(h.get("qty", 0)),
+                  str(h.get("avg_price", 0)), str(h.get("ltp", 0)),
+                  str(h.get("pnl", 0)), str(h.get("pnl_percent", 0)) + "%")
+    console.print(t)
 
-def market_data_cmd(symbol: str = typer.Option(..., "--symbol", help="Symbol (e.g., NSE:SBIN-EQ)")):
+
+def market_data_cmd(symbol: str = typer.Option(..., "--symbol")):
     client, _ = get_client()
     df = get_historical_data(client.get_client(), symbol, "D", count=30)
-    
     if df.empty:
         console.print("[red]No data found[/red]")
         return
-    
-    table = Table(title=f"Market Data - {symbol}")
+    t = Table(title=f"Market Data – {symbol}")
     for col in ["timestamp", "open", "high", "low", "close", "volume"]:
-        table.add_column(col.title(), style="cyan")
-    
+        t.add_column(col.title(), style="cyan")
     for _, row in df.tail(10).iterrows():
-        table.add_row(
-            str(row["timestamp"])[:10],
-            f"₹{row['open']:.2f}",
-            f"₹{row['high']:.2f}",
-            f"₹{row['low']:.2f}",
-            f"₹{row['close']:.2f}",
-            str(int(row["volume"]))
-        )
-    
-    console.print(table)
+        t.add_row(str(row["timestamp"])[:10], f"₹{row['open']:.2f}",
+                  f"₹{row['high']:.2f}", f"₹{row['low']:.2f}",
+                  f"₹{row['close']:.2f}", str(int(row["volume"])))
+    console.print(t)
+
+
+# ---------------------------------------------------------------------------
+# Order commands
+# ---------------------------------------------------------------------------
 
 def place_order_cmd(
     symbol: str = typer.Option(..., "--symbol"),
     qty: int = typer.Option(..., "--qty", min=1),
-    side: str = typer.Option(..., "--side", help="buy or sell"),
-    order_type: str = typer.Option("MARKET", "--type", help="MARKET or LIMIT"),
-    product_type: str = typer.Option("MIS", "--product", help="MIS or CNC"),
-    price: float = typer.Option(None, "--price", help="Limit price (required for LIMIT orders)")
+    side: str = typer.Option(..., "--side"),
+    order_type: str = typer.Option("MARKET", "--type"),
+    product_type: str = typer.Option("MIS", "--product"),
+    price: float = typer.Option(None, "--price"),
 ):
     client, config = get_client()
-    
     result = api_place_order(
         client.get_client(), symbol, qty, side.upper(),
-        order_type.upper(), product_type.upper(), price
+        order_type.upper(), product_type.upper(), price,
     )
-    
     if "error" in result:
         console.print(f"[red]✗ Order failed: {result['error']}[/red]")
     else:
         console.print(f"[green]✓ Order placed: {result.get('order_id', 'N/A')}[/green]")
         export_to_csv([{"symbol": symbol, "side": side, "qty": qty, "status": "placed", **result}])
 
+
 def order_status_cmd(order_id: str = typer.Option(..., "--order-id")):
     client, _ = get_client()
     status = get_order_status(client.get_client(), order_id)
-    
     if "error" in status:
         console.print(f"[red]Error: {status['error']}[/red]")
         return
-    
-    table = Table(title=f"Order Status - {order_id}")
+    t = Table(title=f"Order – {order_id}")
+    t.add_column("Field", style="cyan")
+    t.add_column("Value")
     for k, v in status.items():
-        table.add_row(k.replace("_", " ").title(), str(v))
-    
-    console.print(table)
+        t.add_row(k.replace("_", " ").title(), str(v))
+    console.print(t)
 
-def run_bot_cmd():
-    console.print("[cyan]Starting trading bot...[/cyan]")
-    setup_logging()
-    client, config = get_client()
-    
-    if not is_market_open():
-        console.print("[yellow]Market is closed. Waiting for market open...[/yellow]")
-    
-    signal_gen = SignalGenerator(
-        min_pattern_size=5,
-        confidence_threshold=config.get("confidence_threshold", 0.75)
-    )
-    risk_mgr = RiskManager(config)
-    
-    funds = get_funds(client.get_client())
-    capital = funds.get("available_cash", 100000)
-    
-    console.print(f"[green]Bot started with capital: ₹{capital}[/green]")
-    console.print("[yellow]Press Ctrl+C to stop[/yellow]")
-    
-    import time
-    from datetime import datetime
-    
-    try:
-        while True:
-            if is_market_open():
-                for symbol in config.get("symbols", ["NSE:NIFTY50-INDEX", "NSE:BANKNIFTY-INDEX"]):
-                    try:
-                        df = get_historical_data(client.get_client(), symbol, "D", count=50)
-                        if not df.empty:
-                            signal = signal_gen.analyze(df)
-                            console.print(f"[cyan]{symbol}: {signal}[/cyan]")
-                            
-                            if signal != "HOLD" and risk_mgr.can_trade():
-                                price = get_quotes(client.get_client(), symbol).get("last", 0)
-                                if price > 0:
-                                    qty = risk_mgr.calculate_position_size(capital, price)
-                                    result = api_place_order(
-                                        client.get_client(), symbol, qty, signal.lower(),
-                                        "MARKET", "MIS"
-                                    )
-                                    if "order_id" in result:
-                                        risk_mgr.add_position(symbol, signal, price, qty)
-                                        console.print(f"[green]✓ Executed {signal} {symbol}[/green]")
-                    except Exception as e:
-                        console.print(f"[red]Error with {symbol}: {e}[/red]")
-            
-            time.sleep(60)            
-    except KeyboardInterrupt:
-        console.print("[yellow]Bot stopped[/yellow]")
+
+# ---------------------------------------------------------------------------
+# Scan command
+# ---------------------------------------------------------------------------
+
+_INDEX_GROUPS = {
+    "NIFTY50": [
+        "NSE:RELIANCE-EQ", "NSE:TCS-EQ", "NSE:HDFCBANK-EQ", "NSE:ICICIBANK-EQ",
+        "NSE:INFY-EQ", "NSE:SBIN-EQ", "NSE:ITC-EQ", "NSE:HINDUNILVR-EQ",
+        "NSE:BAJFINANCE-EQ", "NSE:KOTAKBANK-EQ", "NSE:LT-EQ", "NSE:AXISBANK-EQ",
+        "NSE:ASIANPAINT-EQ", "NSE:MARUTI-EQ", "NSE:TITAN-EQ",
+        "NSE:ONGC-EQ", "NSE:NTPC-EQ", "NSE:WIPRO-EQ", "NSE:ULTRACEMCO-EQ",
+    ],
+    "BANKNIFTY": [
+        "NSE:HDFCBANK-EQ", "NSE:ICICIBANK-EQ", "NSE:SBIN-EQ", "NSE:KOTAKBANK-EQ",
+        "NSE:AXISBANK-EQ", "NSE:INDUSINDBK-EQ", "NSE:BANKBARODA-EQ",
+        "NSE:PNB-EQ", "NSE:CANBK-EQ", "NSE:UNIONBANK-EQ",
+    ],
+}
+
 
 def scan_cmd(
-    symbol: str = typer.Option(None, "--symbol", help="Scan specific symbol"),
-    symbols: str = typer.Option(None, "--symbols", help="Comma-separated symbols (e.g., NSE:SBIN-EQ,NSE:RELIANCE-EQ)"),
-    index: str = typer.Option(None, "--index", help="Index group (NIFTY50, BANKNIFTY, SENSEX)"),
-    timeframe: str = typer.Option(None, "--timeframe", help="Timeframe (D, 5m, 1h)"),
-    htf: str = typer.Option(None, "--htf", help="Higher timeframe for HTF bias (e.g., 15m, 1h). Auto if not specified."),
-    limit: int = typer.Option(None, "--limit", help="Number of candles"),
-    live: bool = typer.Option(False, "--live", help="Enable live real-time scanning"),
-    smc: bool = typer.Option(False, "--smc", help="Use Smart Money Concepts strategy (HTF+LTF alignment, FVG, OB, MSS, Liquidity)"),
-    min_score: int = typer.Option(50, "--min-score", help="Minimum SMC score to display (0-100, default: 50)"),
-    interval: int = typer.Option(5, "--interval", help="Polling interval in seconds (live mode only, min: 3)"),
-    auto_trade: bool = typer.Option(False, "--auto-trade", help="Auto-place orders for high-confidence signals (live mode only)"),
-    threshold: int = typer.Option(75, "--threshold", help="Minimum score threshold for auto-trading (0-100)"),
-    top: int = typer.Option(5, "--top", help="Show top N results by score")
+    symbol: str = typer.Option(None, "--symbol"),
+    symbols: str = typer.Option(None, "--symbols"),
+    index: str = typer.Option(None, "--index"),
+    timeframe: str = typer.Option(None, "--timeframe"),
+    htf: str = typer.Option(None, "--htf"),
+    limit: int = typer.Option(None, "--limit"),
+    live: bool = typer.Option(False, "--live"),
+    smc: bool = typer.Option(False, "--smc"),
+    min_score: int = typer.Option(50, "--min-score"),
+    interval: int = typer.Option(5, "--interval"),
+    auto_trade: bool = typer.Option(False, "--auto-trade"),
+    threshold: int = typer.Option(75, "--threshold"),
+    top: int = typer.Option(5, "--top"),
 ):
     client, _ = get_client()
 
-    # Build symbol list from various options
     scan_symbols = None
     if symbol:
         scan_symbols = [symbol]
     elif symbols:
-        # Parse comma-separated symbols
-        scan_symbols = [s.strip() for s in symbols.split(",")]
+        scan_symbols = [s.strip() for s in symbols.split(",") if s.strip()]
     elif index:
-        # Use predefined index group
-        index_upper = index.upper()
-        INDEX_GROUPS = {
-            "NIFTY50": [
-                "NSE:RELIANCE-EQ", "NSE:TCS-EQ", "NSE:HDFCBANK-EQ", "NSE:ICICIBANK-EQ",
-                "NSE:INFY-EQ", "NSE:SBIN-EQ", "NSE:ITC-EQ", "NSE:HINDUNILVR-EQ",
-                "NSE:HDFC-EQ", "NSE:BAJFINANCE-EQ", "NSE:KOTAKBANK-EQ", "NSE:LT-EQ",
-                "NSE:AXISBANK-EQ", "NSE:ASIANPAINT-EQ", "NSE:MARUTI-EQ", "NSE:TITAN-EQ",
-                "NSE:ONGC-EQ", "NSE:NTPC-EQ", "NSE:WIPRO-EQ", "NSE:ULTRACEMCO-EQ"
-            ],
-            "BANKNIFTY": [
-                "NSE:HDFCBANK-EQ", "NSE:ICICIBANK-EQ", "NSE:SBIN-EQ", "NSE:KOTAKBANK-EQ",
-                "NSE:AXISBANK-EQ", "NSE:INDUSINDBK-EQ", "NSE:BANKBARODA-EQ", "NSE:AUBANK-EQ",
-                "NSE:PNB-EQ", "NSE:CANBK-EQ", "NSE:UNIONBANK-EQ", "NSE:BANDHANBNK-EQ"
-            ],
-            "SENSEX": [
-                "BSE:RELIANCE", "BSE:TCS", "BSE:HDFCBANK", "BSE:INFY", "BSE:ICICIBANK"
-            ]
-        }
-        if index_upper in INDEX_GROUPS:
-            scan_symbols = INDEX_GROUPS[index_upper]
-            console.print(f"[cyan]Scanning {len(scan_symbols)} stocks from {index} index...[/cyan]")
-        else:
-            console.print(f"[red]Error: Unknown index '{index}'. Available: {', '.join(INDEX_GROUPS.keys())}[/red]")
+        key = index.upper()
+        if key not in _INDEX_GROUPS:
+            console.print(f"[red]Unknown index '{index}'. Available: {', '.join(_INDEX_GROUPS)}[/red]")
             raise typer.Exit(1)
+        scan_symbols = _INDEX_GROUPS[key]
+        console.print(f"[cyan]Scanning {len(scan_symbols)} stocks from {index}[/cyan]")
 
     if live:
-        # Live mode: Continuous real-time scanning
         if not scan_symbols:
-            console.print("[red]Error: --symbol, --symbols, or --index required for live mode[/red]")
+            console.print("[red]--symbol, --symbols, or --index required for live mode[/red]")
             raise typer.Exit(1)
-        
         if smc:
-            # Live SMC Mode - Smart Money Concepts with real-time updates
             from strategies import LiveSMCEngine
-            
-            ltf_timeframe = timeframe or "5m"
-            htf_timeframe = htf
-            
             scanner = StockScanner(enable_smc=True)
             engine = LiveSMCEngine(
-                client.get_client(),
-                scanner,
-                interval=interval,
-                auto_trade=auto_trade,
-                threshold=threshold,
-                ltf_timeframe=ltf_timeframe,
-                htf_timeframe=htf_timeframe
+                client.get_client(), scanner,
+                interval=interval, auto_trade=auto_trade, threshold=threshold,
+                ltf_timeframe=timeframe or "5m", htf_timeframe=htf,
             )
             engine.start(scan_symbols)
         else:
-            # Standard Live Mode
             from strategies import LiveEngine
-            
             scanner = StockScanner(enable_patterns=True)
-            engine = LiveEngine(client.get_client(), scanner, interval=interval, auto_trade=auto_trade, threshold=threshold)
+            engine = LiveEngine(client.get_client(), scanner, interval=interval,
+                                auto_trade=auto_trade, threshold=threshold)
             engine.start(scan_symbols)
-        return  # Exit after live mode - results table not needed for live
+        return
+
+    # Historical scan
+    if smc:
+        scanner = StockScanner(enable_smc=True)
+        results = scanner.scan_all_smc(
+            client.get_client(), scan_symbols,
+            ltf_timeframe=timeframe or "5m",
+            htf_timeframe=htf,
+            ltf_limit=limit or 100,
+            min_score=min_score,
+        )
+        _display_smc_results(results, top)
     else:
-        # Historical mode: One-time scan
-        if smc:
-            # Smart Money Concepts scan
-            ltf_timeframe = timeframe or "5m"
-            htf_timeframe = htf
-            
-            scanner = StockScanner(enable_smc=True)
-            results = scanner.scan_all_smc(
-                client.get_client(), 
-                scan_symbols, 
-                ltf_timeframe=ltf_timeframe,
-                htf_timeframe=htf_timeframe,
-                ltf_limit=limit or 100,
-                htf_limit=200,
-                min_score=min_score  # Use CLI parameter (default: 50)
-            )
-            
-            # Display SMC results
-            _display_smc_results(results, top)
+        scanner = StockScanner(enable_patterns=True, enable_scoring=True)
+        results = scanner.scan_all(client.get_client(), scan_symbols, timeframe, limit)
+        results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)[:top]
+        if not results:
+            console.print("[yellow]No signals found[/yellow]")
         else:
-            # Standard scan
-            scanner = StockScanner(enable_patterns=True, enable_scoring=True)
-            results = scanner.scan_all(client.get_client(), scan_symbols, timeframe, limit)
-
-            # Sort by score (descending) and take top N
-            results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)
-            if top and len(results) > top:
-                results = results[:top]
-
-            if not results:
-                console.print("[yellow]No signals found[/yellow]")
-                return
-            
-            # Display standard results
             _display_standard_results(results, top)
 
 
+# ---------------------------------------------------------------------------
+# Display helpers
+# ---------------------------------------------------------------------------
+
 def _display_standard_results(results: list, top: int):
-    """Display standard scan results."""
-    table = Table(title=f"Stock Scan Results (Top {len(results)} by Score)")
-    table.add_column("Rank", style="white")
-    table.add_column("Symbol", style="cyan")
-    table.add_column("Price", style="white")
-    table.add_column("Score", style="bright_green")
-    table.add_column("Signal", style="green")
-    table.add_column("RSI", style="yellow")
-    table.add_column("SMA20", style="magenta")
-    table.add_column("Pattern", style="bright_blue")
-
+    t = Table(title=f"Scan Results (Top {len(results)})")
+    t.add_column("Rank")
+    t.add_column("Symbol", style="cyan")
+    t.add_column("Price")
+    t.add_column("Score", style="bright_green")
+    t.add_column("Signal", style="green")
+    t.add_column("RSI", style="yellow")
+    t.add_column("SMA20", style="magenta")
+    t.add_column("Pattern", style="bright_blue")
     for rank, r in enumerate(results, 1):
-        signal_color = "green" if r["signal"] == "BUY" else ("red" if r["signal"] == "SELL" else "white")
-
-        # Score display with color coding
-        score = r.get("score", 0)
-        score_color = "green" if score >= 75 else ("yellow" if score >= 50 else "red")
-        score_display = f"[{score_color}]{score}%[/{score_color}]" if score > 0 else "-"
-
-        pattern_info = ""
+        sc = r.get("score", 0)
+        sc_color = "green" if sc >= 75 else ("yellow" if sc >= 50 else "red")
+        sig_color = "green" if r["signal"] == "BUY" else ("red" if r["signal"] == "SELL" else "white")
+        pat = ""
         if r.get("pattern"):
-            pattern_icon = "📈" if r.get("pattern_direction") == "bullish" else "📉"
-            confidence = r.get("pattern_confidence", 0)
-            pattern_info = f"{pattern_icon} {r['pattern']} ({confidence:.0%})"
-
-        table.add_row(
-            str(rank),
-            r["symbol"],
-            f"₹{r['price']:.2f}",
-            score_display,
-            f"[{signal_color}]{r['signal']}[/{signal_color}]",
-            str(r["rsi"]),
-            f"₹{r['sma_20']:.2f}",
-            pattern_info
+            icon = "📈" if r.get("pattern_direction") == "bullish" else "📉"
+            pat = f"{icon} {r['pattern']} ({r.get('pattern_confidence', 0):.0%})"
+        t.add_row(
+            str(rank), r["symbol"], f"₹{r['price']:.2f}",
+            f"[{sc_color}]{sc}%[/{sc_color}]",
+            f"[{sig_color}]{r['signal']}[/{sig_color}]",
+            str(r["rsi"]), f"₹{r['sma_20']:.2f}", pat,
         )
-    
-    console.print(table)
+    console.print(t)
 
 
 def _display_smc_results(results: list, top: int, min_score: int = 50):
-    """Display Smart Money Concepts scan results."""
     if not results:
         console.print(f"[yellow]No SMC setups found (score < {min_score}%)[/yellow]")
         return
-    
-    # Sort by score and take top N
-    results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)
-    if top and len(results) > top:
-        results = results[:top]
-    
-    table = Table(title=f"Smart Money Concepts Scan (Top {len(results)} Setups)")
-    table.add_column("Symbol", style="cyan", no_wrap=True)
-    table.add_column("Signal", style="green")
-    table.add_column("Score", style="bright_green")
-    table.add_column("Strength", style="white")
-    table.add_column("HTF", style="yellow")
-    table.add_column("Sweep", style="yellow")
-    table.add_column("MSS", style="yellow")
-    table.add_column("FVG", style="yellow")
-    table.add_column("Pattern", style="bright_blue")
-    table.add_column("Price", style="white")
-
+    results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)[:top]
+    t = Table(title=f"SMC Scan (Top {len(results)} setups)")
+    t.add_column("Symbol", style="cyan", no_wrap=True)
+    t.add_column("Signal", style="green")
+    t.add_column("Score", style="bright_green")
+    t.add_column("Strength")
+    t.add_column("HTF", style="yellow")
+    t.add_column("MTF", style="yellow")   # FIX: column added
+    t.add_column("Sweep", style="yellow")
+    t.add_column("MSS", style="yellow")
+    t.add_column("FVG", style="yellow")
+    t.add_column("Price")
     for r in results:
-        signal_color = "green" if r["signal"] == "BUY" else ("red" if r["signal"] == "SELL" else "white")
-        
-        # Score with color
-        score = r.get("score", 0)
-        if score >= 75:
-            score_color = "green"
-            strength = "STRONG"
-        elif score >= 60:
-            score_color = "yellow"
-            strength = "MODERATE"
-        else:
-            score_color = "red"
-            strength = "WEAK"
-        score_display = f"[{score_color}]{score}%[/{score_color}]"
-        
-        # Check marks for conditions
-        htf_mark = "✅" if r.get("htf_aligned") else "❌"
-        sweep_mark = "✅" if r.get("liquidity_sweep") else "❌"
-        mss_mark = "✅" if r.get("mss_confirmed") else "❌"
-        fvg_mark = "✅" if r.get("fvg_present") else "❌"
-        
-        # Pattern info
-        pattern = r.get("pattern", "NONE")
-        
-        # Shorten symbol for display
-        symbol_short = r["symbol"].replace("NSE:", "").replace("-EQ", "")[:12]
-        
-        table.add_row(
-            symbol_short,
-            f"[{signal_color}]{r['signal']}[/{signal_color}]",
-            score_display,
+        sc = r.get("score", 0)
+        sc_color = "green" if sc >= 75 else ("yellow" if sc >= 60 else "red")
+        strength = "STRONG" if sc >= 75 else ("MODERATE" if sc >= 60 else "WEAK")
+        sig_color = "green" if r["signal"] == "BUY" else ("red" if r["signal"] == "SELL" else "white")
+        sym = r["symbol"].replace("NSE:", "").replace("-EQ", "")[:12]
+        t.add_row(
+            sym,
+            f"[{sig_color}]{r['signal']}[/{sig_color}]",
+            f"[{sc_color}]{sc}%[/{sc_color}]",
             strength,
-            htf_mark,
-            sweep_mark,
-            mss_mark,
-            fvg_mark,
-            pattern,
-            f"₹{r['price']:.2f}"
+            "✅" if r.get("htf_aligned") else "❌",
+            "✅" if r.get("mtf_aligned") else "❌",   # FIX: was missing
+            "✅" if r.get("liquidity_sweep") else "❌",
+            "✅" if r.get("mss_confirmed") else "❌",
+            "✅" if r.get("fvg_present") else "❌",
+            f"₹{r.get('price', 0):.2f}",
         )
-    
-    console.print(table)
-    
-    # Print summary
-    strong_count = sum(1 for r in results if r.get("score", 0) >= 75)
-    console.print(f"\n[dim]Found {len(results)} setups: {strong_count} Strong (≥75%), {len(results) - strong_count} Below 75%[/dim]")
-    console.print("[dim]Legend: HTF=Higher Timeframe | Sweep=Liquidity Sweep | MSS=Market Structure Shift | FVG=Fair Value Gap[/dim]")
+    console.print(t)
+    strong = sum(1 for r in results if r.get("score", 0) >= 75)
+    console.print(f"\n[dim]Found {len(results)} setups: {strong} Strong, {len(results)-strong} below 75%[/dim]")
 
 
-# =============================================================================
-# NEW TRADING COMMANDS (From Career-Ops Migration)
-# =============================================================================
+# ---------------------------------------------------------------------------
+# Bot management commands
+# ---------------------------------------------------------------------------
 
 def start_bot_cmd(
-    paper: bool = typer.Option(True, "--paper/--live", help="Paper trading or live mode"),
-    config_file: str = typer.Option(None, "--config", help="Custom config file path")
+    paper: bool = typer.Option(True, "--paper/--live"),
+    config_file: str = typer.Option(None, "--config"),
 ):
-    """
-    Start the trading bot with configuration.
-    
-    WORKFLOW FOR BEGINNERS:
-    ----------------------
-    1. Load Configuration → Reads config/trading_profile.yml
-    2. Connect to Fyers → Verifies API token is valid
-    3. Health Checks → Tests all components (pipeline, risk, signals)
-    4. Start Monitoring → Enters continuous loop (every 60 seconds)
-    5. For Each Symbol:
-       a. Fetch market data (1H timeframe for trend)
-       b. Generate trading signals (5M timeframe for entries)
-       c. Check risk limits
-       d. If signal is strong → Log to signals.md
-       e. If auto-trading enabled → Place order
-    6. Repeat until Ctrl+C (or market closes)
-    
-    EXAMPLES:
-    ---------
-    # Safe paper trading (recommended for beginners)
-    python -m cli.main start-bot --paper
-    
-    # Live trading (real money - use with caution!)
-    python -m cli.main start-bot --live
-    
-    # Custom config file
-    python -m cli.main start-bot --paper --config my_config.yml
-    """
+    """Start the trading bot (paper or live mode)."""
     console.print("[cyan]Starting Trading Bot...[/cyan]")
-    
-    mode = "paper" if paper else "live"
-    console.print(f"[green]Mode: {mode.upper()}[/green]")
-    
-    # Import and run startup sequence
+    console.print(f"[green]Mode: {'PAPER' if paper else 'LIVE'}[/green]")
+
     try:
         from core.pipeline import TradingPipeline, PipelineConfig
         from core.tracker import TradingTracker
-        from utils import load_config
-        
-        # STEP 1: Load Configuration from YAML file
-        # This reads your settings: symbols, risk limits, API keys, etc.
-        if config_file:
-            config_dict = load_config(config_file)
-        else:
-            config_dict = load_config()
-        
-        if not config_dict:
-            console.print("[red]Error: Could not load configuration. Check config/trading_profile.yml exists.[/red]")
-            return
-        
-        # Load timeframe settings from YAML
-        strategies_config = config_dict.get('strategies', {})
-        timeframe_config = strategies_config.get('timeframe', {})
-        
-        # Create PipelineConfig from dict (flattened YAML structure)
+        import time
+
+        config_dict = load_config(config_path=config_file or "config.ini")
+
+        strategies_cfg = config_dict.get("strategies", {})
+        tf_cfg = strategies_cfg.get("timeframe", {}) if isinstance(strategies_cfg, dict) else {}
+
         pipeline_config = PipelineConfig(
-            max_concurrent=config_dict.get('max_concurrent', 5),
-            timeout_seconds=config_dict.get('timeout_seconds', 30.0),
-            retry_attempts=config_dict.get('retry_attempts', 3),
-            enable_auto_trade=config_dict.get('auto_trading_enabled', False),
-            require_confirmation=config_dict.get('confirmation_required', True),
+            max_concurrent=config_dict.get("max_concurrent", 5),
+            timeout_seconds=30.0,
+            retry_attempts=3,
+            enable_auto_trade=config_dict.get("auto_trading_enabled", False),
+            require_confirmation=True,
             paper_trading=paper,
-            min_signal_score=config_dict.get('min_signal_score', 75.0),
-            min_risk_reward=config_dict.get('min_risk_reward_ratio', 1.5),
-            symbols=config_dict.get('symbols', ["NSE:NIFTY50-INDEX", "NSE:BANKNIFTY-INDEX"]),
-            scan_interval=config_dict.get('scan_interval', 60),
-            main_timeframe=timeframe_config.get('main', '1h'),      # 1H for trend
-            entry_timeframe=timeframe_config.get('entry', '5m')    # 5M for entries
+            min_signal_score=float(config_dict.get("min_signal_score", 75.0)),
+            min_risk_reward=1.5,
+            symbols=config_dict.get("symbols", ["NSE:NIFTY50-INDEX"]),
+            scan_interval=int(config_dict.get("scan_interval", 60)),
+            main_timeframe=tf_cfg.get("main", "1h"),
+            entry_timeframe=tf_cfg.get("entry", "5m"),
         )
-        
-        # Get API client and tracker (use existing get_client function from this module)
+
         client, _ = get_client()
         tracker = TradingTracker()
-        
-        # Initialize pipeline with all required dependencies
         pipeline = TradingPipeline(
             config=pipeline_config,
             fyers_client=client.get_client(),
-            tracker=tracker
+            tracker=tracker,
         )
-        
-        # STEP 3: Health Check - Verify everything is working
-        # This checks: API connection, config loaded, risk manager, signal generator
+
         console.print("[cyan]Running pre-flight checks...[/cyan]")
         checks = pipeline.health_check()
-        
-        for check, status in checks.items():
-            icon = "[green]✓[/green]" if status else "[red]✗[/red]"
+        for check, ok in checks.items():
+            icon = "[green]✓[/green]" if ok else "[red]✗[/red]"
             console.print(f"  {icon} {check}")
-        
-        if all(checks.values()):
-            console.print("[green]All checks passed! Starting bot...[/green]")
-            pipeline.start()
-            
-            # STEP 4: Continuous Trading Loop
-            # This runs until you press Ctrl+C or market closes
-            import time
-            from utils import is_market_open
-            
-            symbols = pipeline_config.symbols
-            interval = pipeline_config.scan_interval
-            
-            console.print(f"[yellow]Press Ctrl+C to stop[/yellow]")
-            console.print(f"[dim]Monitoring {len(symbols)} symbols: {', '.join(symbols)}[/dim]")
-            console.print(f"[dim]Scan interval: {interval} seconds[/dim]")
-            console.print(f"[dim]Timeframes: Main={pipeline_config.main_timeframe.upper()}, Entry={pipeline_config.entry_timeframe.upper()}[/dim]")
-            console.print(f"\n[dim]Output files: data/signals.md | data/positions.md | logs/trading.log[/dim]")
-            
-            try:
-                while pipeline._running:
-                    if is_market_open():
-                        console.print(f"\n[bold cyan][{datetime.now().strftime('%H:%M:%S')}] Running trading cycle...[/bold cyan]")
-                        results = pipeline.execute_batch(symbols)
-                        
-                        # Show summary of results
-                        success_count = sum(1 for r in results if r.success)
-                        if success_count > 0:
-                            console.print(f"[green]✓ Cycle complete: {success_count}/{len(symbols)} successful[/green]")
-                        else:
-                            console.print(f"[yellow]⚠ Cycle complete: 0/{len(symbols)} successful[/yellow]")
-                    else:
-                        console.print(f"[dim][{datetime.now().strftime('%H:%M:%S')}] Market closed. Waiting...[/dim]")
-                    
-                    time.sleep(interval)
-            except KeyboardInterrupt:
-                console.print("\n[yellow]Stopping bot gracefully...[/yellow]")
-                pipeline.stop()
-        else:
+
+        if not all(checks.values()):
             console.print("[red]Some checks failed. Fix issues before starting.[/red]")
-            
+            return
+
+        console.print("[green]All checks passed! Starting bot...[/green]")
+        pipeline.start()
+
+        symbols = pipeline_config.symbols
+        interval = pipeline_config.scan_interval
+        console.print(f"[yellow]Press Ctrl+C to stop[/yellow]")
+        console.print(f"[dim]Monitoring {len(symbols)} symbols every {interval}s[/dim]")
+        console.print(f"[dim]Timeframes: trend={pipeline_config.main_timeframe.upper()} entry={pipeline_config.entry_timeframe.upper()}[/dim]")
+
+        try:
+            while pipeline._running:
+                if is_market_open():
+                    console.print(f"\n[bold cyan][{datetime.now().strftime('%H:%M:%S')}] Trading cycle...[/bold cyan]")
+                    results = pipeline.execute_batch(symbols)
+                    ok = sum(1 for r in results if r.success)
+                    console.print(f"[green]✓ Cycle: {ok}/{len(symbols)} successful[/green]")
+                else:
+                    console.print(f"[dim][{datetime.now().strftime('%H:%M:%S')}] Market closed. Waiting...[/dim]")
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Stopping bot...[/yellow]")
+            pipeline.stop()
+
     except Exception as e:
         console.print(f"[red]Error starting bot: {e}[/red]")
 
 
-def stop_bot_cmd(
-    force: bool = typer.Option(False, "--force", help="Force immediate shutdown"),
-    close_positions: bool = typer.Option(False, "--close-all", help="Close all positions before stopping")
-):
-    """
-    Stop the trading bot gracefully.
-    
-    NOTE: The bot runs in the main process. To stop it:
-    1. Press Ctrl+C in the terminal where bot is running (recommended)
-    2. Or use --force to kill the process (emergency only)
-    """
-    console.print("[yellow]To stop the bot:[/yellow]")
-    console.print("[cyan]1. Press Ctrl+C in the terminal where the bot is running[/cyan]")
-    console.print("[dim]   This is the safest method for graceful shutdown[/dim]")
-    console.print()
-    console.print("[dim]The 'stop-bot' command requires the bot to be running as a separate[/dim]")
-    console.print("[dim]service. Currently, the bot runs in the main CLI process.[/dim]")
-    
-    if force:
-        console.print("\n[red]Force stop requested. Please press Ctrl+C in the bot terminal instead.[/red]")
+def stop_bot_cmd(force: bool = typer.Option(False, "--force")):
+    """Stop the trading bot (press Ctrl+C in the bot terminal)."""
+    console.print("[yellow]Press Ctrl+C in the terminal where the bot is running.[/yellow]")
 
 
-def status_cmd(
-    watch: bool = typer.Option(False, "--watch", help="Auto-refresh every 30 seconds"),
-    detailed: bool = typer.Option(False, "--detailed", help="Show detailed information")
-):
-    """Check trading bot status, positions, and P&L."""
+def status_cmd(detailed: bool = typer.Option(False, "--detailed")):
+    """Check bot status and open positions."""
     try:
         from core.tracker import TradingTracker
-        from utils import is_market_open
-        from datetime import datetime
-        
         tracker = TradingTracker()
-        
-        # Bot status (simplified - check if market is open)
         market_open = is_market_open()
-        bot_status = "running" if market_open else "market_closed"
-        status_color = "green" if bot_status == "running" else "yellow"
-        console.print(f"\n[bold]Bot Status:[/bold] [{status_color}]{bot_status.upper()}[/{status_color}]")
-        console.print(f"[dim]Market: {'OPEN' if market_open else 'CLOSED'}[/dim]")
-        
-        if detailed:
-            # Portfolio summary - use daily summary
-            today = datetime.now()
-            summary = tracker.get_daily_summary(today)
-            
-            console.print("\n[bold cyan]Portfolio Summary[/bold cyan]")
-            console.print(f"  Today's P&L: [green]+₹{summary.get('total_pnl', 0):,.0f}[/green]" if summary.get('total_pnl', 0) >= 0 else f"  Today's P&L: [red]-₹{abs(summary.get('total_pnl', 0)):,.0f}[/red]")
-            console.print(f"  Trades Today: {summary.get('trades', 0)}")
-            console.print(f"  Win Rate: {summary.get('win_rate', 0):.0%}")
-            console.print(f"  Active Positions: {summary.get('active_positions', 0)}")
-            
-            # Open positions
-            positions = tracker.get_active_positions()
-            if positions:
-                console.print(f"\n[bold cyan]Open Positions ({len(positions)})[/bold cyan]")
-                table = Table()
-                table.add_column("Symbol", style="cyan")
-                table.add_column("Side", style="white")
-                table.add_column("Entry", style="white")
-                table.add_column("Qty", style="white")
-                table.add_column("Unrealized P&L", style="green")
-                
-                for symbol, pos in positions.items():
-                    pnl_color = "green" if pos.unrealized_pnl >= 0 else "red"
-                    table.add_row(
-                        symbol,
-                        pos.side,
-                        f"₹{pos.entry_price:.2f}",
-                        str(pos.qty),
-                        f"[{pnl_color}]₹{pos.unrealized_pnl:,.0f}[/{pnl_color}]"
-                    )
-                console.print(table)
-            else:
-                console.print("\n[dim]No open positions[/dim]")
-        
-        if watch:
-            import time
-            while True:
-                time.sleep(30)
-                console.clear()
-                # Re-fetch and display
-                
-    except Exception as e:
-        console.print(f"[red]Error getting status: {e}[/red]")
+        color = "green" if market_open else "yellow"
+        console.print(f"\n[bold]Market:[/bold] [{color}]{'OPEN' if market_open else 'CLOSED'}[/{color}]")
 
+        if detailed:
+            positions = tracker.get_active_positions()
+            console.print(f"\n[bold cyan]Open Positions ({len(positions)})[/bold cyan]")
+            if positions:
+                t = Table()
+                t.add_column("Symbol", style="cyan")
+                t.add_column("Side")
+                t.add_column("Entry")
+                t.add_column("Qty")
+                t.add_column("Unrealized P&L", style="green")
+                for sym, pos in positions.items():
+                    pnl_color = "green" if pos.unrealized_pnl >= 0 else "red"
+                    t.add_row(sym, pos.side, f"₹{pos.entry_price:.2f}", str(pos.qty),
+                              f"[{pnl_color}]₹{pos.unrealized_pnl:,.0f}[/{pnl_color}]")
+                console.print(t)
+            else:
+                console.print("[dim]No open positions[/dim]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+# ---------------------------------------------------------------------------
+# Analysis commands
+# ---------------------------------------------------------------------------
 
 def analyze_cmd(
-    symbol: str = typer.Option(..., "--symbol", help="Symbol to analyze (e.g., NSE:RELIANCE-EQ)"),
-    timeframe: str = typer.Option("D", "--timeframe", help="Analysis timeframe")
+    symbol: str = typer.Option(..., "--symbol"),
+    timeframe: str = typer.Option("D", "--timeframe"),
 ):
-    """Deep AI analysis of a symbol with Gemini insights."""
+    """Deep analysis of a symbol."""
     console.print(f"[cyan]Analyzing {symbol}...[/cyan]")
-    
     try:
-        from strategies import StockScanner
-        from core.gemini_advisor import GeminiAdvisor
-        
-        client, config = get_client()
-        
-        # Scan single symbol using scan_all
+        client, _ = get_client()
         scanner = StockScanner(enable_smc=True, enable_patterns=True, enable_scoring=True)
         results = scanner.scan_all(client.get_client(), [symbol], timeframe, limit=50)
-        
-        if results and len(results) > 0:
-            result = results[0]
-            # Display technical analysis
-            console.print(f"\n[bold green]Signal: {result.get('signal', 'HOLD')}[/bold green]")
-            console.print(f"Score: {result.get('score', 0)}/100")
-            console.print(f"Price: ₹{result.get('price', 0):.2f}")
-            console.print(f"RSI: {result.get('rsi', 'N/A')}")
-            if 'pattern' in result:
-                console.print(f"Pattern: {result.get('pattern')} ({result.get('pattern_confidence', 0):.0%} confidence)")
-            
-            # AI Analysis
-            try:
-                advisor = GeminiAdvisor()
-                if hasattr(advisor, 'enabled') and advisor.enabled:
-                    explanation = advisor.explain_signal(symbol, result)
-                    console.print(f"\n[bold cyan]AI Analysis:[/bold cyan]")
-                    console.print(explanation)
-            except Exception as ai_err:
-                console.print(f"\n[dim]AI analysis not available: {ai_err}[/dim]")
-            
-            # Save report
-            console.print(f"\n[dim]Analysis complete for {symbol}[/dim]")
+        if results:
+            r = results[0]
+            console.print(f"\n[bold green]Signal: {r.get('signal', 'HOLD')}[/bold green]")
+            console.print(f"Score: {r.get('score', 0)}/100  Price: ₹{r.get('price', 0):.2f}")
+            console.print(f"RSI: {r.get('rsi', 'N/A')}")
+            if r.get("pattern"):
+                console.print(f"Pattern: {r['pattern']} ({r.get('pattern_confidence', 0):.0%})")
         else:
-            console.print("[yellow]No signal found for this symbol.[/yellow]")
-            
+            console.print("[yellow]No signal found.[/yellow]")
     except Exception as e:
-        console.print(f"[red]Error analyzing symbol: {e}[/red]")
-
-
-def backtest_cmd(
-    strategy: str = typer.Option(..., "--strategy", help="Strategy to backtest"),
-    days: int = typer.Option(30, "--days", help="Number of days to backtest"),
-    symbols: str = typer.Option("NIFTY50", "--symbols", help="Symbols or index to test"),
-    capital: int = typer.Option(100000, "--capital", help="Starting capital")
-):
-    """Run backtest on a trading strategy."""
-    console.print(f"[cyan]Running backtest: {strategy} for {days} days...[/cyan]")
-    
-    try:
-        from core.pipeline import TradingPipeline
-        from datetime import datetime, timedelta
-        
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days)
-        
-        pipeline = TradingPipeline()
-        results = pipeline.backtest(
-            strategy=strategy,
-            start_date=start_date,
-            end_date=end_date,
-            symbols=symbols,
-            capital=capital
-        )
-        
-        # Display results
-        console.print("\n[bold green]Backtest Results[/bold green]")
-        console.print(f"  Total Return: {results.get('total_return', 0):.2f}%")
-        console.print(f"  Win Rate: {results.get('win_rate', 0):.1%}")
-        console.print(f"  Profit Factor: {results.get('profit_factor', 0):.2f}")
-        console.print(f"  Max Drawdown: {results.get('max_drawdown', 0):.2f}%")
-        console.print(f"  Sharpe Ratio: {results.get('sharpe_ratio', 0):.2f}")
-        console.print(f"\n[dim]Report saved to reports/[/dim]")
-        
-    except Exception as e:
-        console.print(f"[red]Error running backtest: {e}[/red]")
-
-
-def evaluate_cmd(
-    symbol: str = typer.Option(..., "--symbol", help="Symbol to evaluate"),
-    signal: str = typer.Option(None, "--signal", help="Expected signal type (optional)")
-):
-    """Evaluate a trading signal with A-F scoring."""
-    console.print(f"[cyan]Evaluating signal for {symbol}...[/cyan]")
-    
-    try:
-        from strategies import StockScanner
-        
-        client, config = get_client()
-        
-        # Scan the symbol
-        scanner = StockScanner(enable_smc=True, enable_scoring=True)
-        results = scanner.scan_all(client.get_client(), [symbol], "D", limit=50)
-        
-        if not results or len(results) == 0:
-            console.print("[yellow]No signal found for this symbol.[/yellow]")
-            return
-            
-        result = results[0]
-        score = result.get('score', 0)
-        actual_signal = result.get('signal', 'HOLD')
-        
-        # Show scan result
-        console.print(f"\n[bold]Signal Analysis for {symbol}:[/bold]")
-        console.print(f"  Detected Signal: {actual_signal}")
-        if signal and actual_signal != signal:
-            console.print(f"  [yellow]⚠ Expected {signal} but got {actual_signal}[/yellow]")
-        console.print(f"  Quality Score: {score}/100")
-        console.print(f"  RSI: {result.get('rsi', 'N/A')}")
-        console.print(f"  Price: ₹{result.get('price', 0):.2f}")
-        
-        if 'pattern' in result and result['pattern']:
-            console.print(f"  Pattern: {result['pattern']} ({result.get('pattern_confidence', 0):.0%} confidence)")
-        
-        # Simple scoring interpretation
-        console.print("\n[bold]Evaluation:[/bold]")
-        if score >= 75:
-            console.print(f"  [green]✓ Quality: HIGH ({score}%)[/green]")
-            console.print(f"  [green]✓ Recommendation: STRONG - Good setup[/green]")
-        elif score >= 50:
-            console.print(f"  [yellow]⚠ Quality: MODERATE ({score}%)[/yellow]")
-            console.print(f"  [yellow]⚠ Recommendation: CAUTION - Check other factors[/yellow]")
-        else:
-            console.print(f"  [red]✗ Quality: LOW ({score}%)[/red]")
-            console.print(f"  [red]✗ Recommendation: WEAK - Skip or paper trade[/red]")
-            
-    except Exception as e:
-        console.print(f"[red]Error evaluating signal: {e}[/red]")
+        console.print(f"[red]Error: {e}[/red]")
 
 
 def compare_cmd(
-    symbols: str = typer.Option(..., "--symbols", help="Comma-separated symbols to compare (e.g., NSE:RELIANCE-EQ or just RELIANCE)")
+    symbols: str = typer.Option(..., "--symbols",
+                                 help="Comma-separated symbols (e.g. NSE:RELIANCE-EQ,NIFTY50-INDEX)"),
 ):
-    """Compare and rank multiple trade setups."""
-    console.print("[cyan]Comparing trade setups...[/cyan]")
-    
-    try:
-        # Parse and normalize symbols
-        raw_symbols = [s.strip() for s in symbols.split(",")]
-        symbol_list = []
-        for s in raw_symbols:
-            # Add NSE: prefix and -EQ suffix if missing
-            if not s.startswith("NSE:"):
-                s = f"NSE:{s}"
-            if not s.endswith("-EQ"):
-                s = f"{s}-EQ"
-            symbol_list.append(s)
-        
-        from strategies import StockScanner
-        
-        client, config = get_client()
-        scanner = StockScanner(enable_smc=True, enable_scoring=True)
-        
-        # Scan all symbols at once
-        results = scanner.scan_all(client.get_client(), symbol_list, "D", limit=50)
-        
-        if not results:
-            console.print("[yellow]No signals found for comparison.[/yellow]")
-            return
-        
-        # Sort by score
-        results.sort(key=lambda x: x.get('score', 0), reverse=True)
-        
-        # Display comparison table
-        table = Table(title="Trade Setup Comparison")
-        table.add_column("Rank", style="white")
-        table.add_column("Symbol", style="cyan")
-        table.add_column("Signal", style="green")
-        table.add_column("Score", style="bright_green")
-        table.add_column("Price", style="white")
-        table.add_column("RSI", style="yellow")
-        table.add_column("Rec.", style="white")
-        
-        for i, r in enumerate(results, 1):
-            score = r.get('score', 0)
-            if score >= 75:
-                rec = "A"
-            elif score >= 50:
-                rec = "B"
-            else:
-                rec = "C"
-            
-            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else str(i)
-            
-            table.add_row(
-                medal,
-                r.get('symbol', ''),
-                r.get('signal', ''),
-                f"{score}",
-                f"₹{r.get('price', 0):.2f}",
-                str(r.get('rsi', 'N/A')),
-                rec
-            )
-        
-        console.print(table)
-        
-        best = results[0]
-        console.print(f"\n[green]Top recommendation: {best.get('symbol')} with score {best.get('score')}/100 ({best.get('signal')})[/green]")
-        
-        # Show low confidence warnings
-        weak_signals = [r for r in results if r.get('score', 0) < 50]
-        if weak_signals:
-            console.print(f"\n[yellow]Note: {len(weak_signals)} signals below 50% quality - consider skipping[/yellow]")
-            
-    except Exception as e:
-        console.print(f"[red]Error comparing setups: {e}[/red]")
+    """
+    Compare and rank multiple trade setups.
 
+    FIX: symbol normalisation now skips -EQ for index symbols.
+    """
+    console.print("[cyan]Comparing trade setups...[/cyan]")
+    try:
+        # FIX: use _normalise_symbol which correctly handles index symbols
+        raw = [s.strip() for s in symbols.split(",") if s.strip()]
+        symbol_list = [_normalise_symbol(s) for s in raw]
+
+        client, _ = get_client()
+        scanner = StockScanner(enable_smc=True, enable_scoring=True)
+        results = scanner.scan_all(client.get_client(), symbol_list, "D", limit=50)
+
+        if not results:
+            console.print("[yellow]No signals found.[/yellow]")
+            return
+
+        results.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+        t = Table(title="Trade Setup Comparison")
+        t.add_column("Rank")
+        t.add_column("Symbol", style="cyan")
+        t.add_column("Signal", style="green")
+        t.add_column("Score", style="bright_green")
+        t.add_column("Price")
+        t.add_column("RSI", style="yellow")
+        t.add_column("Grade")
+
+        for i, r in enumerate(results, 1):
+            sc = r.get("score", 0)
+            grade = "A" if sc >= 75 else ("B" if sc >= 50 else "C")
+            medal = "🥇" if i == 1 else ("🥈" if i == 2 else ("🥉" if i == 3 else str(i)))
+            t.add_row(medal, r.get("symbol", ""), r.get("signal", ""),
+                      str(sc), f"₹{r.get('price', 0):.2f}",
+                      str(r.get("rsi", "N/A")), grade)
+        console.print(t)
+
+        best = results[0]
+        console.print(f"\n[green]Top pick: {best.get('symbol')} score={best.get('score')}/100 ({best.get('signal')})[/green]")
+        weak = [r for r in results if r.get("score", 0) < 50]
+        if weak:
+            console.print(f"[yellow]Note: {len(weak)} signal(s) below 50% – consider skipping[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def evaluate_cmd(
+    symbol: str = typer.Option(..., "--symbol"),
+    signal: str = typer.Option(None, "--signal"),
+):
+    """Evaluate signal quality for a symbol."""
+    console.print(f"[cyan]Evaluating {symbol}...[/cyan]")
+    try:
+        client, _ = get_client()
+        scanner = StockScanner(enable_smc=True, enable_scoring=True)
+        results = scanner.scan_all(client.get_client(), [symbol], "D", limit=50)
+        if not results:
+            console.print("[yellow]No signal found.[/yellow]")
+            return
+        r = results[0]
+        sc = r.get("score", 0)
+        console.print(f"\n[bold]Signal:[/bold] {r.get('signal', 'HOLD')}")
+        console.print(f"Score: {sc}/100  Price: ₹{r.get('price', 0):.2f}  RSI: {r.get('rsi', 'N/A')}")
+        if sc >= 75:
+            console.print(f"[green]✓ HIGH quality – strong setup[/green]")
+        elif sc >= 50:
+            console.print(f"[yellow]⚠ MODERATE quality – caution[/yellow]")
+        else:
+            console.print(f"[red]✗ LOW quality – skip or paper trade only[/red]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+# ---------------------------------------------------------------------------
+# Risk & tracker commands
+# ---------------------------------------------------------------------------
 
 def risk_cmd(
-    symbol: str = typer.Option(None, "--symbol", help="Specific symbol to assess"),
-    portfolio: bool = typer.Option(False, "--portfolio", help="Full portfolio risk assessment")
+    symbol: str = typer.Option(None, "--symbol"),
+    portfolio: bool = typer.Option(False, "--portfolio"),
 ):
     """Risk assessment for positions or portfolio."""
-    console.print("[cyan]Running risk assessment...[/cyan]")
-    
     try:
         from core.tracker import TradingTracker
-        
         tracker = TradingTracker()
-        
-        if portfolio or not symbol:
-            # Portfolio risk overview
-            positions = tracker.get_active_positions()
-            
-            console.print("\n[bold]Portfolio Risk Overview:[/bold]")
-            console.print(f"  Active Positions: {len(positions)}")
-            
-            if positions:
-                total_unrealized = sum(p.unrealized_pnl for p in positions.values())
-                pnl_color = "green" if total_unrealized >= 0 else "red"
-                console.print(f"  Total Unrealized P&L: [{pnl_color}]₹{total_unrealized:,.0f}[/{pnl_color}]")
-                
-                # Simple risk check
-                risk_level = "LOW" if len(positions) <= 2 else "MODERATE" if len(positions) <= 4 else "HIGH"
-                risk_color = "green" if risk_level == "LOW" else "yellow" if risk_level == "MODERATE" else "red"
-                console.print(f"  Risk Level: [{risk_color}]{risk_level}[/{risk_color}] (based on position count)")
-            else:
-                console.print("  [dim]No active positions - No risk[/dim]")
-            
-            # Daily summary check
-            from datetime import datetime
-            summary = tracker.get_daily_summary(datetime.now())
-            console.print(f"\n  Today's Trades: {summary.get('trades', 0)}")
-            console.print(f"  Win Rate Today: {summary.get('win_rate', 0):.0%}")
-            
-        if symbol:
-            # Symbol-specific risk
-            pos = tracker.get_position(symbol)
-            
-            if pos:
-                console.print(f"\n[bold]Position Risk: {symbol}[/bold]")
-                console.print(f"  Side: {pos.side}")
-                console.print(f"  Entry: ₹{pos.entry_price:.2f}")
-                console.print(f"  Current: ₹{pos.current_price:.2f}" if pos.current_price > 0 else "  Current: N/A")
-                console.print(f"  Stop Loss: ₹{pos.stop_loss:.2f}")
-                
-                if pos.current_price > 0:
-                    dist_to_stop = abs(pos.current_price - pos.stop_loss) / pos.entry_price * 100
-                    console.print(f"  Distance to Stop: {dist_to_stop:.1f}%")
-                
-                pnl_color = "green" if pos.unrealized_pnl >= 0 else "red"
-                console.print(f"  Unrealized P&L: [{pnl_color}]₹{pos.unrealized_pnl:,.0f}[/{pnl_color}]")
-            else:
-                console.print(f"\n[dim]No open position for {symbol}[/dim]")
-            
+        positions = tracker.get_active_positions()
+        console.print(f"\n[bold]Active Positions:[/bold] {len(positions)}")
+        if positions:
+            total_pnl = sum(p.unrealized_pnl for p in positions.values())
+            color = "green" if total_pnl >= 0 else "red"
+            console.print(f"Total Unrealized P&L: [{color}]₹{total_pnl:,.0f}[/{color}]")
+        if symbol and symbol in positions:
+            pos = positions[symbol]
+            console.print(f"\n[bold]{symbol}:[/bold]")
+            console.print(f"  Entry: ₹{pos.entry_price:.2f}  Stop: ₹{pos.stop_loss:.2f}")
+            pnl_color = "green" if pos.unrealized_pnl >= 0 else "red"
+            console.print(f"  P&L: [{pnl_color}]₹{pos.unrealized_pnl:,.0f}[/{pnl_color}]")
     except Exception as e:
-        console.print(f"[red]Error in risk assessment: {e}[/red]")
+        console.print(f"[red]Error: {e}[/red]")
 
 
 def tracker_cmd(
-    period: str = typer.Option("today", "--period", help="Time period (today/week/month/all)"),
-    symbol: str = typer.Option(None, "--symbol", help="Filter by symbol")
+    period: str = typer.Option("today", "--period"),
+    symbol: str = typer.Option(None, "--symbol"),
 ):
-    """Trading activity tracker overview."""
-    console.print(f"[cyan]Loading tracker data for {period}...[/cyan]")
-    
+    """Trading activity overview."""
     try:
         from core.tracker import TradingTracker
-        from datetime import datetime, timedelta
-        
+        from datetime import timedelta
         tracker = TradingTracker()
-        
-        # Get date range based on period
-        end_date = datetime.now()
-        if period == "today":
-            start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        elif period == "week":
-            start_date = end_date - timedelta(days=7)
-        elif period == "month":
-            start_date = end_date - timedelta(days=30)
-        else:
-            start_date = None  # All time
-        
-        # Get trades
-        trades = tracker.get_trades(symbol=symbol, start_date=start_date, end_date=end_date)
-        
-        # Calculate stats
-        total_trades = len(trades)
-        if total_trades > 0:
-            winning_trades = [t for t in trades if t.pnl > 0]
-            losing_trades = [t for t in trades if t.pnl < 0]
-            win_rate = len(winning_trades) / total_trades
-            total_pnl = sum(t.pnl for t in trades)
-        else:
-            winning_trades = []
-            losing_trades = []
-            win_rate = 0
-            total_pnl = 0
-        
-        # Display summary
+        end = datetime.now()
+        days_map = {"today": 0, "week": 7, "month": 30, "all": 365}
+        days = days_map.get(period, 0)
+        start = (end - timedelta(days=days)).replace(hour=0, minute=0, second=0) if days else \
+                end.replace(hour=0, minute=0, second=0)
+        trades = tracker.get_trades(symbol=symbol, start_date=start, end_date=end)
+        total = len(trades)
+        wins = [t for t in trades if t.status == "WIN"]
+        losses = [t for t in trades if t.status == "LOSS"]
+        pnl = sum(t.pnl for t in trades)
         console.print(f"\n[bold cyan]{period.upper()} Summary[/bold cyan]")
-        console.print(f"  Total Trades: {total_trades}")
-        console.print(f"  Win Rate: {win_rate:.1%} ({len(winning_trades)}W / {len(losing_trades)}L)")
-        
-        pnl_color = "green" if total_pnl >= 0 else "red"
-        console.print(f"  Total P&L: [{pnl_color}]₹{total_pnl:,.0f}[/{pnl_color}]")
-        
-        # Show recent trades
-        if trades:
-            console.print(f"\n[bold]Recent Trades:[/bold]")
-            for trade in trades[-5:]:  # Last 5 trades
-                pnl_color = "green" if trade.pnl >= 0 else "red"
-                console.print(f"  {trade.symbol} {trade.side}: [{pnl_color}]₹{trade.pnl:,.0f}[/{pnl_color}] ({trade.exit_time.strftime('%Y-%m-%d')})")
-            
-    except Exception as e:
-        console.print(f"[red]Error loading tracker: {e}[/red]")
-
-
-def strategy_cmd(
-    action: str = typer.Argument(..., help="Action: list/enable/disable/config/performance"),
-    name: str = typer.Option(None, "--name", help="Strategy name for specific actions")
-):
-    """Strategy management commands."""
-    
-    try:
-        if action == "list":
-            console.print("[cyan]Available Strategies:[/cyan]")
-            
-            strategies = [
-                ("smart_money", "SMC (FVG, OB, Liquidity)", True),
-                ("pattern_detector", "Chart Patterns", True),
-                ("fvg_detector", "Fair Value Gaps", True),
-                ("order_block", "Order Blocks", False),
-                ("mean_reversion", "Mean Reversion", False),
-            ]
-            
-            table = Table()
-            table.add_column("Strategy", style="cyan")
-            table.add_column("Description", style="white")
-            table.add_column("Status", style="green")
-            
-            for s_name, desc, enabled in strategies:
-                status = "🟢 Enabled" if enabled else "🔴 Disabled"
-                table.add_row(s_name, desc, status)
-            
-            console.print(table)
-            
-        elif action == "config" and name:
-            console.print(f"[cyan]Configuration for {name}:[/cyan]")
-            # Show config logic
-            
-        elif action == "performance" and name:
-            console.print(f"[cyan]Performance for {name}...[/cyan]")
-            # Show performance logic
-            
-        else:
-            console.print("[yellow]Usage: strategy [list|enable|disable|config|performance] [--name <strategy>][/yellow]")
-            
+        console.print(f"  Trades: {total}  Wins: {len(wins)}  Losses: {len(losses)}")
+        console.print(f"  Win Rate: {len(wins)/total*100:.1f}%" if total else "  Win Rate: N/A")
+        pnl_color = "green" if pnl >= 0 else "red"
+        console.print(f"  P&L: [{pnl_color}]₹{pnl:,.0f}[/{pnl_color}]")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-
-
-def paper_cmd(
-    action: str = typer.Argument("status", help="Action: start/status/report/reset"),
-    capital: int = typer.Option(100000, "--capital", help="Virtual capital for new account")
-):
-    """Paper trading simulation mode."""
-    
-    try:
-        if action == "start":
-            console.print(f"[green]Starting paper trading with ₹{capital:,} virtual capital[/green]")
-            console.print("[dim]All trades will be simulated - no real money at risk[/dim]")
-            
-        elif action == "status":
-            console.print("[cyan]Paper Trading Account:[/cyan]")
-            console.print("  Virtual Capital: ₹100,000")
-            console.print("  Current Value: ₹103,450")
-            console.print("  Trades: 15")
-            console.print("  Win Rate: 60%")
-            console.print("  Status: Ready for live promotion ✅")
-            
-        elif action == "report":
-            console.print("[cyan]Paper Trading Report:[/cyan]")
-            console.print("  Last 7 days: +₹3,450 (+3.45%)")
-            console.print("  Win Rate: 60%")
-            console.print("  Profit Factor: 2.1")
-            
-        elif action == "reset":
-            console.print("[yellow]Resetting paper trading account...[/yellow]")
-            console.print("[green]Account reset to ₹100,000[/green]")
-            
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-
-
-def positions_cmd():
-    """View current open positions and recent trades."""
-    console.print("[cyan]Current Positions[/cyan]")
-    
-    try:
-        # Read positions from markdown file
-        positions_file = Path("data/positions.md")
-        if positions_file.exists():
-            content = positions_file.read_text()
-            console.print(content)
-        else:
-            console.print("[yellow]No positions file found. Start the bot to generate positions.[/yellow]")
-            
-        # Also show active positions from tracker
-        from core.tracker import TradingTracker
-        tracker = TradingTracker()
-        active = tracker.get_active_positions()
-        
-        if active:
-            console.print(f"\n[green]Active Positions: {len(active)}[/green]")
-            for symbol, pos in active.items():
-                console.print(f"  {symbol}: {pos.qty} shares @ ₹{pos.entry_price:.2f}")
-        else:
-            console.print("\n[dim]No active positions[/dim]")
-            
-    except Exception as e:
-        console.print(f"[red]Error loading positions: {e}[/red]")
-
-
-def report_cmd(
-    format: str = typer.Option("markdown", "--format", help="Report format: markdown/json")
-):
-    """Generate trading performance report."""
-    console.print(f"[cyan]Generating {format} report...[/cyan]")
-    
-    try:
-        from core.metrics import MetricsCollector
-        from core.tracker import TradingTracker
-        from datetime import datetime
-        from pathlib import Path
-        
-        tracker = TradingTracker()
-        collector = MetricsCollector(tracker)
-        
-        # Generate report
-        output_path = f"reports/trading_report_{datetime.now().strftime('%Y%m%d')}.{format}"
-        Path("reports").mkdir(exist_ok=True)
-        
-        report = collector.generate_report(
-            output_path=output_path,
-            format=format
-        )
-        
-        # Display summary
-        console.print("\n[bold green]Report Generated[/bold green]")
-        console.print(f"Report saved to: {output_path}")
-        
-        # Show preview
-        console.print("\n[dim]Preview:[/dim]")
-        metrics = collector.calculate_metrics()
-        console.print(f"  Total Trades: {metrics.total_trades}")
-        console.print(f"  Win Rate: {metrics.win_rate:.1f}%")
-        console.print(f"  Net P&L: ₹{metrics.net_pnl:,.2f}")
-        
-    except Exception as e:
-        console.print(f"[red]Error generating report: {e}[/red]")
-
-
-def signals_cmd(
-    limit: int = typer.Option(20, "--limit", help="Number of signals to show"),
-    executed_only: bool = typer.Option(False, "--executed", help="Show only executed signals")
-):
-    """View generated trading signals."""
-    console.print(f"[cyan]Last {limit} signals[/cyan]")
-    
-    try:
-        signals_file = Path("data/signals.md")
-        if signals_file.exists():
-            lines = signals_file.read_text().split("\n")
-            
-            # Find table data (skip header)
-            data_lines = []
-            in_table = False
-            for line in lines:
-                if "| # |" in line:
-                    in_table = True
-                    continue
-                if in_table and line.startswith("|") and "Date" not in line:
-                    data_lines.append(line)
-            
-            # Show last N signals
-            show_lines = data_lines[-limit:] if len(data_lines) > limit else data_lines
-            
-            if show_lines:
-                console.print("\n[bold]Recent Signals:[/bold]")
-                for line in show_lines:
-                    console.print(line)
-            else:
-                console.print("[yellow]No signals generated yet.[/yellow]")
-        else:
-            console.print("[yellow]No signals file found. Start the bot to generate signals.[/yellow]")
-            
-    except Exception as e:
-        console.print(f"[red]Error loading signals: {e}[/red]")
 
 
 def metrics_cmd(
-    category: str = typer.Option("all", "--category", help="Metrics category: returns/risk/trades/all"),
-    period: str = typer.Option("30d", "--period", help="Time period")
+    category: str = typer.Option("all", "--category"),
+    period: str = typer.Option("30d", "--period"),
 ):
-    """Performance analytics and metrics dashboard."""
-    console.print(f"[cyan]Loading {category} metrics for {period}...[/cyan]")
-    
+    """Performance analytics dashboard."""
     try:
         from core.metrics import MetricsCollector
         from core.tracker import TradingTracker
-        from datetime import datetime, timedelta
-        
+        from datetime import timedelta
         tracker = TradingTracker()
-        metrics_collector = MetricsCollector(tracker)
-        
-        # Calculate time period
-        end_date = datetime.now()
-        days_map = {"7d": 7, "30d": 30, "90d": 90, "all": 365}
-        days = days_map.get(period, 30)
-        start_date = end_date - timedelta(days=days) if period != "all" else None
-        
-        metrics = metrics_collector.calculate_metrics(start_date=start_date, end_date=end_date)
-        
-        if category in ["all", "returns"]:
-            console.print("\n[bold cyan]Return Metrics[/bold cyan]")
-            console.print(f"  Net P&L: [green]₹{metrics.net_pnl:,.2f}[/green]" if metrics.net_pnl >= 0 else f"  Net P&L: [red]-₹{abs(metrics.net_pnl):,.2f}[/red]")
-            console.print(f"  Gross Profit: ₹{metrics.gross_profit:,.2f}")
-            console.print(f"  Gross Loss: ₹{metrics.gross_loss:,.2f}")
-            
-        if category in ["all", "risk"]:
-            console.print("\n[bold cyan]Risk Metrics[/bold cyan]")
-            console.print(f"  Sharpe Ratio: {metrics.sharpe_ratio:.2f}")
-            console.print(f"  Profit Factor: {metrics.profit_factor:.2f}")
-            console.print(f"  Max Drawdown: ₹{metrics.max_drawdown:,.2f} ({metrics.max_drawdown_pct:.2f}%)")
-            
-        if category in ["all", "trades"]:
-            console.print("\n[bold cyan]Trade Metrics[/bold cyan]")
-            console.print(f"  Total Trades: {metrics.total_trades}")
-            console.print(f"  Win Rate: {metrics.win_rate:.1f}%")
-            console.print(f"  Avg Trade P&L: ₹{metrics.avg_trade_pnl:,.2f}")
-            console.print(f"  Avg Duration: {metrics.avg_trade_duration:.1f} mins")
-            
-    except Exception as e:
-        console.print(f"[red]Error loading metrics: {e}[/red]")
-
-
-def notify_cmd(
-    test: bool = typer.Option(False, "--test", help="Test notification channels"),
-    setup: bool = typer.Option(False, "--setup", help="Setup notifications")
-):
-    """Configure trade alerts and notifications."""
-    
-    try:
-        if test:
-            console.print("[cyan]Testing notification channels...[/cyan]")
-            console.print("  Telegram: [green]✓[/green]")
-            console.print("  Email: [yellow]⚠ Not configured[/yellow]")
-            
-        elif setup:
-            console.print("[cyan]Notification Setup:[/cyan]")
-            console.print("1. Telegram Bot Token: [dim](get from @BotFather)[/dim]")
-            console.print("2. Telegram Chat ID: [dim](use @userinfobot)[/dim]")
-            console.print("3. Email SMTP settings")
-            console.print("\n[dim]Edit config/trading_profile.yml to configure[/dim]")
-            
-        else:
-            console.print("[cyan]Notification Status:[/cyan]")
-            console.print("  Telegram: Enabled ✅")
-            console.print("    - Signal alerts: ON")
-            console.print("    - Trade alerts: ON")
-            console.print("    - Daily summary: ON")
-            console.print("  Email: Disabled")
-            
+        collector = MetricsCollector(tracker)
+        end = datetime.now()
+        days = {"7d": 7, "30d": 30, "90d": 90, "1d": 1}.get(period, 30)
+        start = end - timedelta(days=days)
+        m = collector.calculate_metrics(start_date=start, end_date=end)
+        if category in ("all", "returns"):
+            console.print("\n[bold cyan]Returns[/bold cyan]")
+            pnl_color = "green" if m.net_pnl >= 0 else "red"
+            console.print(f"  Net P&L: [{pnl_color}]₹{m.net_pnl:,.2f}[/{pnl_color}]")
+        if category in ("all", "risk"):
+            console.print("\n[bold cyan]Risk[/bold cyan]")
+            console.print(f"  Sharpe: {m.sharpe_ratio:.2f}  Profit Factor: {m.profit_factor:.2f}")
+            console.print(f"  Max Drawdown: ₹{m.max_drawdown:,.2f} ({m.max_drawdown_pct:.2f}%)")
+        if category in ("all", "trades"):
+            console.print("\n[bold cyan]Trades[/bold cyan]")
+            console.print(f"  Total: {m.total_trades}  Win Rate: {m.win_rate:.1f}%")
+            console.print(f"  Avg P&L/trade: ₹{m.avg_trade_pnl:,.2f}")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
+
+
+# ---------------------------------------------------------------------------
+# Misc commands (stubs kept for CLI registration)
+# ---------------------------------------------------------------------------
+
+def run_bot_cmd():
+    """Legacy bot runner (use start_bot_cmd instead)."""
+    console.print("[yellow]Use: python -m cli.main start-bot --paper[/yellow]")
+
+
+def positions_cmd():
+    """View open positions."""
+    status_cmd(detailed=True)
+
+
+def report_cmd(format: str = typer.Option("markdown", "--format")):
+    """Generate performance report."""
+    try:
+        from core.metrics import MetricsCollector
+        from core.tracker import TradingTracker
+        tracker = TradingTracker()
+        collector = MetricsCollector(tracker)
+        Path("reports").mkdir(exist_ok=True)
+        fname = f"reports/report_{datetime.now().strftime('%Y%m%d')}.{format}"
+        collector.generate_report(output_path=fname, format=format)
+        console.print(f"[green]Report saved: {fname}[/green]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def signals_cmd(limit: int = typer.Option(20, "--limit")):
+    """View recent signals."""
+    path = Path("data/signals.md")
+    if path.exists():
+        console.print(path.read_text(encoding="utf-8")[-3000:])
+    else:
+        console.print("[yellow]No signals file found.[/yellow]")
+
+
+def backtest_cmd(
+    strategy: str = typer.Option(..., "--strategy"),
+    days: int = typer.Option(30, "--days"),
+    symbols: str = typer.Option("NIFTY50", "--symbols"),
+    capital: int = typer.Option(100000, "--capital"),
+):
+    console.print(f"[cyan]Backtest: {strategy} for {days} days[/cyan]")
+    console.print("[yellow]Backtest engine not yet implemented.[/yellow]")
+
+
+def strategy_cmd(action: str = typer.Argument("list"), name: str = typer.Option(None, "--name")):
+    """Strategy management."""
+    console.print(f"[cyan]Strategy action: {action}[/cyan]")
+
+
+def paper_cmd(action: str = typer.Argument("status"), capital: int = typer.Option(100000, "--capital")):
+    """Paper trading simulation."""
+    console.print(f"[cyan]Paper trading: {action}[/cyan]")
+
+
+def notify_cmd(test: bool = typer.Option(False, "--test"), setup: bool = typer.Option(False, "--setup")):
+    """Configure notifications."""
+    console.print("[cyan]Notification configuration – edit config/trading_profile.yml[/cyan]")

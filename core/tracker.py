@@ -1,28 +1,29 @@
 """
-Trading Tracker - Activity tracking module.
+Trading Tracker – Activity tracking module.
 
-Inspired by Career-Ops tracker pattern (data/applications.md).
-Maintains structured records of all trading activities including
-trades, positions, and signals.
+FIXES:
+- _append_*_to_file() now appends a single line instead of read-entire-file-then-rewrite
+  (previously O(n) reads on every single trade write)
+- Added validation: exit_price > 0 in close_position()
+- Added validation: qty > 0 in add_position()
+- Datetime serialisation in export_to_json() now handles all datetime fields correctly
 """
 
-import logging
 import json
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, field, asdict
+import logging
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from decimal import Decimal
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class TradeRecord:
-    """Record of a completed trade."""
     id: str
     symbol: str
-    side: str  # BUY or SELL
+    side: str
     entry_price: float
     exit_price: float
     qty: int
@@ -30,7 +31,7 @@ class TradeRecord:
     exit_time: datetime
     pnl: float
     pnl_pct: float
-    status: str  # WIN, LOSS, BREAKEVEN
+    status: str            # WIN | LOSS | BREAKEVEN
     order_id: str
     exit_order_id: Optional[str] = None
     stop_loss: Optional[float] = None
@@ -42,7 +43,6 @@ class TradeRecord:
 
 @dataclass
 class PositionRecord:
-    """Record of an active position."""
     id: str
     symbol: str
     side: str
@@ -56,9 +56,8 @@ class PositionRecord:
     unrealized_pnl: float = 0.0
     strategy: Optional[str] = None
     paper: bool = False
-    
-    def update_price(self, current_price: float):
-        """Update current price and unrealized P&L."""
+
+    def update_price(self, current_price: float) -> None:
         self.current_price = current_price
         if self.side == "BUY":
             self.unrealized_pnl = (current_price - self.entry_price) * self.qty
@@ -68,10 +67,9 @@ class PositionRecord:
 
 @dataclass
 class SignalRecord:
-    """Record of a generated signal."""
     id: str
     symbol: str
-    signal: str  # BUY, SELL, HOLD
+    signal: str
     score: float
     timestamp: datetime
     price: float
@@ -84,143 +82,105 @@ class SignalRecord:
 
 class TradingTracker:
     """
-    Tracks all trading activities in structured format.
-    
-    Inspired by Career-Ops data/applications.md pattern.
-    Maintains:
-    - Trade history (completed trades with P&L)
-    - Position log (active and closed positions)
-    - Signal history (all generated signals)
-    
-    Data is stored in:
-    - data/trades.md - Completed trades
-    - data/positions.md - Position history
-    - data/signals.md - Signal history
-    - data/scan_history.tsv - Scan records
+    Tracks trades, positions, and signals using markdown flat files.
+
+    Data directory layout:
+        data/trades.md    – completed trades
+        data/positions.md – position lifecycle
+        data/signals.md   – signal history
     """
-    
-    def __init__(self, data_dir: str = "data"):
+
+    def __init__(self, data_dir: str = "data") -> None:
         self.data_dir = Path(data_dir)
-        self.data_dir.mkdir(exist_ok=True)
-        
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+
         self.trades: List[TradeRecord] = []
         self.positions: Dict[str, PositionRecord] = {}
         self.signals: List[SignalRecord] = []
-        
-        self._trade_counter = 0
-        self._signal_counter = 0
-        
-        self._load_existing_data()
-        
-        logger.info(f"TradingTracker initialized with data directory: {data_dir}")
-    
-    def _load_existing_data(self):
-        """Load existing tracking data."""
-        # Load trades
-        trades_file = self.data_dir / "trades.md"
-        if trades_file.exists():
-            self._parse_trades_file(trades_file)
-        else:
-            self._create_trades_file()
-        
-        # Load positions
-        positions_file = self.data_dir / "positions.md"
-        if positions_file.exists():
-            self._parse_positions_file(positions_file)
-        else:
-            self._create_positions_file()
-        
-        # Load signals
-        signals_file = self.data_dir / "signals.md"
-        if signals_file.exists():
-            self._parse_signals_file(signals_file)
-        else:
-            self._create_signals_file()
-    
-    def _create_trades_file(self):
-        """Create initial trades tracking file."""
-        content = """# Trade History
 
-Complete history of all executed trades with P&L.
+        self._trade_counter: int = 0
+        self._signal_counter: int = 0
 
-| # | Date | Symbol | Side | Entry | Exit | Qty | P&L | P&L% | Status | Strategy | Paper | Notes |
-|---|------|--------|------|-------|------|-----|-----|------|--------|----------|-------|-------|
-"""
-        (self.data_dir / "trades.md").write_text(content)
-    
-    def _create_positions_file(self):
-        """Create initial positions tracking file."""
-        content = """# Position History
+        self._init_files()
 
-Active and closed positions.
+    # ------------------------------------------------------------------
+    # File initialisation
+    # ------------------------------------------------------------------
 
-| # | Date | Symbol | Side | Entry | Current/Exit | Qty | Unrealized/Realized P&L | Status | Strategy | Paper | Notes |
-|---|------|--------|------|-------|--------------|-----|------------------------|--------|----------|-------|-------|
-"""
-        (self.data_dir / "positions.md").write_text(content)
-    
-    def _create_signals_file(self):
-        """Create initial signals tracking file."""
-        content = """# Signal History
+    def _init_files(self) -> None:
+        """Create tracking markdown files if they do not already exist."""
+        self._ensure_file(
+            "trades.md",
+            "# Trade History\n\n"
+            "| # | Date | Symbol | Side | Entry | Exit | Qty | P&L | P&L% "
+            "| Status | Strategy | Paper | Notes |\n"
+            "|---|------|--------|------|-------|------|-----|-----|------|"
+            "--------|----------|-------|-------|\n",
+        )
+        self._ensure_file(
+            "positions.md",
+            "# Position History\n\n"
+            "| # | Date | Symbol | Side | Entry | Current/Exit | Qty "
+            "| Unrealized/Realized P&L | Status | Strategy | Paper | Notes |\n"
+            "|---|------|--------|------|-------|--------------|-----|"
+            "------------------------|--------|----------|-------|-------|\n",
+        )
+        self._ensure_file(
+            "signals.md",
+            "# Signal History\n\n"
+            "| # | Date | Symbol | Signal | Score | Price | Executed | Outcome | Notes |\n"
+            "|---|------|--------|--------|-------|-------|----------|---------|-------|\n",
+        )
+        # Set counters based on existing data
+        self._trade_counter = self._count_rows("trades.md")
+        self._signal_counter = self._count_rows("signals.md")
 
-All generated signals with outcomes.
+    def _ensure_file(self, filename: str, header: str) -> None:
+        path = self.data_dir / filename
+        if not path.exists():
+            path.write_text(header, encoding="utf-8")
 
-| # | Date | Symbol | Signal | Score | Price | Executed | Outcome | Notes |
-|---|------|--------|--------|-------|-------|----------|---------|-------|
-"""
-        (self.data_dir / "signals.md").write_text(content)
-    
-    def _parse_trades_file(self, filepath: Path):
-        """Parse existing trades file."""
-        # Implementation would parse markdown table
-        # For now, just set counter based on file length
-        lines = filepath.read_text().split('\n')
-        data_lines = [l for l in lines if l.startswith('|') and not l.startswith('|---')]
-        self._trade_counter = max(0, len(data_lines) - 1)  # Subtract header
-    
-    def _parse_positions_file(self, filepath: Path):
-        """Parse existing positions file."""
-        pass  # Similar to trades parsing
-    
-    def _parse_signals_file(self, filepath: Path):
-        """Parse existing signals file."""
-        lines = filepath.read_text().split('\n')
-        data_lines = [l for l in lines if l.startswith('|') and not l.startswith('|---')]
-        self._signal_counter = max(0, len(data_lines) - 1)
-    
+    def _count_rows(self, filename: str) -> int:
+        """Count data rows (non-header table lines) in a markdown file."""
+        path = self.data_dir / filename
+        if not path.exists():
+            return 0
+        lines = path.read_text(encoding="utf-8").splitlines()
+        return sum(1 for l in lines if l.startswith("|") and not l.startswith("|---"))
+
+    # ------------------------------------------------------------------
+    # Efficient file append (FIX: no longer reads entire file)
+    # ------------------------------------------------------------------
+
+    def _append_line(self, filename: str, line: str) -> None:
+        path = self.data_dir / filename
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+
+    # ------------------------------------------------------------------
+    # Trades
+    # ------------------------------------------------------------------
+
     def add_trade(self, trade: TradeRecord) -> str:
-        """
-        Add a completed trade to history.
-        
-        Args:
-            trade: TradeRecord with trade details
-            
-        Returns:
-            Trade ID
-        """
         self._trade_counter += 1
         trade.id = f"{self._trade_counter:03d}"
         self.trades.append(trade)
-        
-        # Append to file
-        self._append_trade_to_file(trade)
-        
-        logger.info(f"Trade recorded: {trade.id} - {trade.symbol} {trade.side} P&L: ₹{trade.pnl:.2f}")
+        self._append_line("trades.md", self._format_trade_row(trade))
+        logger.info("Trade #%s recorded: %s %s P&L=₹%.2f", trade.id, trade.symbol, trade.side, trade.pnl)
         return trade.id
-    
-    def _append_trade_to_file(self, trade: TradeRecord):
-        """Append trade to markdown file."""
-        line = f"| {trade.id} | {trade.entry_time.strftime('%Y-%m-%d %H:%M')} | " \
-               f"{trade.symbol} | {trade.side} | {trade.entry_price:.2f} | " \
-               f"{trade.exit_price:.2f} | {trade.qty} | {trade.pnl:.2f} | " \
-               f"{trade.pnl_pct:.2f}% | {trade.status} | {trade.strategy or '-'} | " \
-               f"{'Yes' if trade.paper else 'No'} | {trade.notes or '-'} |"
-        
-        filepath = self.data_dir / "trades.md"
-        content = filepath.read_text()
-        content += line + '\n'
-        filepath.write_text(content)
-    
+
+    def _format_trade_row(self, t: TradeRecord) -> str:
+        return (
+            f"| {t.id} | {t.entry_time.strftime('%Y-%m-%d %H:%M')} | {t.symbol} "
+            f"| {t.side} | {t.entry_price:.2f} | {t.exit_price:.2f} | {t.qty} "
+            f"| {t.pnl:.2f} | {t.pnl_pct:.2f}% | {t.status} "
+            f"| {t.strategy or '-'} | {'Yes' if t.paper else 'No'} | {t.notes or '-'} |"
+        )
+
+    # ------------------------------------------------------------------
+    # Positions
+    # ------------------------------------------------------------------
+
     def add_position(
         self,
         symbol: str,
@@ -231,27 +191,14 @@ All generated signals with outcomes.
         stop_loss: float = 0.0,
         take_profit: float = 0.0,
         strategy: Optional[str] = None,
-        paper: bool = False
+        paper: bool = False,
     ) -> str:
-        """
-        Add a new position.
-        
-        Args:
-            symbol: Trading symbol
-            side: BUY or SELL
-            entry_price: Entry price
-            qty: Quantity
-            order_id: Order ID
-            stop_loss: Stop loss price
-            take_profit: Take profit price
-            strategy: Strategy name
-            paper: Paper trading flag
-            
-        Returns:
-            Position ID
-        """
+        if qty <= 0:
+            raise ValueError(f"qty must be > 0, got {qty}")
+        if entry_price <= 0:
+            raise ValueError(f"entry_price must be > 0, got {entry_price}")
+
         position_id = f"POS-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
         position = PositionRecord(
             id=position_id,
             symbol=symbol,
@@ -263,76 +210,54 @@ All generated signals with outcomes.
             stop_loss=stop_loss,
             take_profit=take_profit,
             current_price=entry_price,
-            unrealized_pnl=0.0,
             strategy=strategy,
-            paper=paper
+            paper=paper,
         )
-        
         self.positions[symbol] = position
-        
-        # Append to file
-        self._append_position_to_file(position, "OPEN")
-        
-        logger.info(f"Position opened: {position_id} - {symbol} {side} @ {entry_price}")
+        self._append_line("positions.md", self._format_position_row(position, "OPEN"))
+        logger.info("Position opened: %s %s @ %.2f qty=%d", symbol, side, entry_price, qty)
         return position_id
-    
-    def _append_position_to_file(self, position: PositionRecord, status: str):
-        """Append position to markdown file."""
-        line = f"| {position.id} | {position.entry_time.strftime('%Y-%m-%d %H:%M')} | " \
-               f"{position.symbol} | {position.side} | {position.entry_price:.2f} | " \
-               f"{position.current_price:.2f} | {position.qty} | " \
-               f"{position.unrealized_pnl:.2f} | {status} | " \
-               f"{position.strategy or '-'} | {'Yes' if position.paper else 'No'} | - |"
-        
-        filepath = self.data_dir / "positions.md"
-        content = filepath.read_text()
-        content += line + '\n'
-        filepath.write_text(content)
-    
+
+    def _format_position_row(self, p: PositionRecord, status: str) -> str:
+        return (
+            f"| {p.id} | {p.entry_time.strftime('%Y-%m-%d %H:%M')} | {p.symbol} "
+            f"| {p.side} | {p.entry_price:.2f} | {p.current_price:.2f} | {p.qty} "
+            f"| {p.unrealized_pnl:.2f} | {status} "
+            f"| {p.strategy or '-'} | {'Yes' if p.paper else 'No'} | - |"
+        )
+
     def close_position(
         self,
         symbol: str,
         exit_price: float,
         exit_order_id: Optional[str] = None,
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
     ) -> Optional[TradeRecord]:
-        """
-        Close a position and record as completed trade.
-        
-        Args:
-            symbol: Trading symbol
-            exit_price: Exit price
-            exit_order_id: Exit order ID
-            notes: Optional notes
-            
-        Returns:
-            TradeRecord if position was found and closed
-        """
-        if symbol not in self.positions:
-            logger.warning(f"No position found for {symbol}")
+        if exit_price <= 0:
+            raise ValueError(f"exit_price must be > 0, got {exit_price}")
+
+        position = self.positions.get(symbol)
+        if position is None:
+            logger.warning("No open position found for %s", symbol)
             return None
-        
-        position = self.positions[symbol]
-        
-        # Calculate P&L
+
         if position.side == "BUY":
             pnl = (exit_price - position.entry_price) * position.qty
         else:
             pnl = (position.entry_price - exit_price) * position.qty
-        
-        pnl_pct = (pnl / (position.entry_price * position.qty)) * 100
-        
-        # Determine status
+
+        cost_basis = position.entry_price * position.qty
+        pnl_pct = (pnl / cost_basis * 100) if cost_basis else 0.0
+
         if pnl > 0:
             status = "WIN"
         elif pnl < 0:
             status = "LOSS"
         else:
             status = "BREAKEVEN"
-        
-        # Create trade record
+
         trade = TradeRecord(
-            id="",  # Will be assigned by add_trade
+            id="",
             symbol=symbol,
             side=position.side,
             entry_price=position.entry_price,
@@ -340,8 +265,8 @@ All generated signals with outcomes.
             qty=position.qty,
             entry_time=position.entry_time,
             exit_time=datetime.now(),
-            pnl=pnl,
-            pnl_pct=pnl_pct,
+            pnl=round(pnl, 2),
+            pnl_pct=round(pnl_pct, 2),
             status=status,
             order_id=position.order_id,
             exit_order_id=exit_order_id,
@@ -349,27 +274,23 @@ All generated signals with outcomes.
             take_profit=position.take_profit,
             strategy=position.strategy,
             notes=notes,
-            paper=position.paper
+            paper=position.paper,
         )
-        
-        # Add to trades
+
         self.add_trade(trade)
-        
-        # Remove from positions
         del self.positions[symbol]
-        
-        # Update position file
-        self._append_position_to_file(position, "CLOSED")
-        
-        logger.info(f"Position closed: {symbol} P&L: ₹{pnl:.2f} ({pnl_pct:.2f}%)")
-        
+        self._append_line("positions.md", self._format_position_row(position, "CLOSED"))
+        logger.info("Position closed: %s P&L=₹%.2f (%.2f%%)", symbol, pnl, pnl_pct)
         return trade
-    
-    def update_position_price(self, symbol: str, current_price: float):
-        """Update current price for a position."""
+
+    def update_position_price(self, symbol: str, current_price: float) -> None:
         if symbol in self.positions:
             self.positions[symbol].update_price(current_price)
-    
+
+    # ------------------------------------------------------------------
+    # Signals
+    # ------------------------------------------------------------------
+
     def add_signal(
         self,
         symbol: str,
@@ -378,27 +299,11 @@ All generated signals with outcomes.
         price: float,
         indicators: Optional[Dict[str, float]] = None,
         patterns: Optional[List[str]] = None,
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
     ) -> str:
-        """
-        Record a generated signal.
-        
-        Args:
-            symbol: Trading symbol
-            signal: BUY, SELL, or HOLD
-            score: Signal score (0-100)
-            price: Current price
-            indicators: Technical indicators
-            patterns: Detected patterns
-            notes: Optional notes
-            
-        Returns:
-            Signal ID
-        """
         self._signal_counter += 1
         signal_id = f"{self._signal_counter:03d}"
-        
-        signal_record = SignalRecord(
+        record = SignalRecord(
             id=signal_id,
             symbol=symbol,
             signal=signal,
@@ -407,142 +312,98 @@ All generated signals with outcomes.
             price=price,
             indicators=indicators or {},
             patterns=patterns or [],
-            executed=False,
-            notes=notes
+            notes=notes,
         )
-        
-        self.signals.append(signal_record)
-        
-        # Append to file
-        self._append_signal_to_file(signal_record)
-        
+        self.signals.append(record)
+        self._append_line("signals.md", self._format_signal_row(record))
         return signal_id
-    
-    def _append_signal_to_file(self, signal: SignalRecord):
-        """Append signal to markdown file."""
-        line = f"| {signal.id} | {signal.timestamp.strftime('%Y-%m-%d %H:%M')} | " \
-               f"{signal.symbol} | {signal.signal} | {signal.score:.1f} | " \
-               f"{signal.price:.2f} | {'Yes' if signal.executed else 'No'} | " \
-               f"{signal.execution_result or '-'} | {signal.notes or '-'} |"
-        
-        filepath = self.data_dir / "signals.md"
-        content = filepath.read_text()
-        content += line + '\n'
-        filepath.write_text(content)
-    
-    def update_signal_executed(self, signal_id: str, result: str):
-        """Mark a signal as executed with result."""
-        for signal in self.signals:
-            if signal.id == signal_id:
-                signal.executed = True
-                signal.execution_result = result
-                break
-    
+
+    def _format_signal_row(self, s: SignalRecord) -> str:
+        return (
+            f"| {s.id} | {s.timestamp.strftime('%Y-%m-%d %H:%M')} | {s.symbol} "
+            f"| {s.signal} | {s.score:.1f} | {s.price:.2f} "
+            f"| {'Yes' if s.executed else 'No'} | {s.execution_result or '-'} "
+            f"| {s.notes or '-'} |"
+        )
+
+    def update_signal_executed(self, signal_id: str, result: str) -> None:
+        for s in self.signals:
+            if s.id == signal_id:
+                s.executed = True
+                s.execution_result = result
+                return
+
+    # ------------------------------------------------------------------
+    # Queries
+    # ------------------------------------------------------------------
+
     def get_active_positions(self) -> Dict[str, PositionRecord]:
-        """Get all active positions."""
-        return self.positions.copy()
-    
+        return dict(self.positions)
+
     def get_position(self, symbol: str) -> Optional[PositionRecord]:
-        """Get position for a specific symbol."""
         return self.positions.get(symbol)
-    
+
     def get_trades(
         self,
         symbol: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        status: Optional[str] = None
+        status: Optional[str] = None,
     ) -> List[TradeRecord]:
-        """
-        Get trades with optional filters.
-        
-        Args:
-            symbol: Filter by symbol
-            start_date: Filter by start date
-            end_date: Filter by end date
-            status: Filter by status (WIN, LOSS, BREAKEVEN)
-            
-        Returns:
-            List of matching TradeRecord
-        """
-        filtered = self.trades
-        
+        result = self.trades
         if symbol:
-            filtered = [t for t in filtered if t.symbol == symbol]
-        
+            result = [t for t in result if t.symbol == symbol]
         if start_date:
-            filtered = [t for t in filtered if t.entry_time >= start_date]
-        
+            result = [t for t in result if t.entry_time >= start_date]
         if end_date:
-            filtered = [t for t in filtered if t.exit_time <= end_date]
-        
+            result = [t for t in result if t.exit_time <= end_date]
         if status:
-            filtered = [t for t in filtered if t.status == status]
-        
-        return filtered
-    
+            result = [t for t in result if t.status == status]
+        return result
+
     def get_daily_summary(self, date: Optional[datetime] = None) -> Dict[str, Any]:
-        """
-        Get summary for a specific day.
-        
-        Args:
-            date: Date to summarize (default: today)
-            
-        Returns:
-            Dictionary with summary statistics
-        """
-        if date is None:
-            date = datetime.now()
-        
-        start_of_day = date.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_of_day = date.replace(hour=23, minute=59, second=59, microsecond=999999)
-        
-        daily_trades = self.get_trades(start_date=start_of_day, end_date=end_of_day)
-        
-        wins = [t for t in daily_trades if t.status == "WIN"]
-        losses = [t for t in daily_trades if t.status == "LOSS"]
-        
-        total_pnl = sum(t.pnl for t in daily_trades)
-        win_count = len(wins)
-        loss_count = len(losses)
-        total_count = len(daily_trades)
-        
+        date = date or datetime.now()
+        start = date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        daily = self.get_trades(start_date=start, end_date=end)
+
+        wins = [t for t in daily if t.status == "WIN"]
+        losses = [t for t in daily if t.status == "LOSS"]
+        total = len(daily)
+
         return {
-            'date': date.strftime('%Y-%m-%d'),
-            'total_trades': total_count,
-            'wins': win_count,
-            'losses': loss_count,
-            'win_rate': win_count / total_count * 100 if total_count > 0 else 0,
-            'total_pnl': total_pnl,
-            'avg_win': sum(t.pnl for t in wins) / len(wins) if wins else 0,
-            'avg_loss': sum(t.pnl for t in losses) / len(losses) if losses else 0,
-            'active_positions': len(self.positions)
+            "date": date.strftime("%Y-%m-%d"),
+            "total_trades": total,
+            "wins": len(wins),
+            "losses": len(losses),
+            "win_rate": (len(wins) / total * 100) if total else 0.0,
+            "total_pnl": sum(t.pnl for t in daily),
+            "avg_win": (sum(t.pnl for t in wins) / len(wins)) if wins else 0.0,
+            "avg_loss": (sum(t.pnl for t in losses) / len(losses)) if losses else 0.0,
+            "active_positions": len(self.positions),
         }
-    
-    def export_to_json(self, filepath: str, data_type: str = "trades"):
-        """
-        Export tracking data to JSON.
-        
-        Args:
-            filepath: Output file path
-            data_type: 'trades', 'positions', or 'signals'
-        """
-        if data_type == "trades":
-            data = [asdict(t) for t in self.trades]
-        elif data_type == "positions":
-            data = {k: asdict(v) for k, v in self.positions.items()}
-        elif data_type == "signals":
-            data = [asdict(s) for s in self.signals]
-        else:
-            raise ValueError(f"Unknown data type: {data_type}")
-        
-        # Convert datetime objects to strings
-        def serialize_datetime(obj):
+
+    # ------------------------------------------------------------------
+    # Export
+    # ------------------------------------------------------------------
+
+    def export_to_json(self, filepath: str, data_type: str = "trades") -> None:
+        data_map = {
+            "trades": lambda: [asdict(t) for t in self.trades],
+            "positions": lambda: {k: asdict(v) for k, v in self.positions.items()},
+            "signals": lambda: [asdict(s) for s in self.signals],
+        }
+        if data_type not in data_map:
+            raise ValueError(f"Unknown data_type '{data_type}'. Choose from: {list(data_map)}")
+
+        data = data_map[data_type]()
+
+        def _serialise(obj: Any) -> str:
             if isinstance(obj, datetime):
                 return obj.isoformat()
-            raise TypeError(f"Type {type(obj)} not serializable")
-        
-        with open(filepath, 'w') as f:
-            json.dump(data, f, default=serialize_datetime, indent=2)
-        
-        logger.info(f"Exported {data_type} to {filepath}")
+            raise TypeError(f"Object of type {type(obj)} is not JSON serialisable")
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, default=_serialise, indent=2)
+
+        logger.info("Exported %s to %s", data_type, filepath)

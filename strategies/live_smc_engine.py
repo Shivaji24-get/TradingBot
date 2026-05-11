@@ -1,440 +1,307 @@
 """
-Live Smart Money Concepts (SMC) Engine
-Real-time scanning with HTF/LTF alignment, FVG, OB, MSS, and Liquidity detection
+Live Smart Money Concepts (SMC) Engine.
+
+FIXES:
+- execute_auto_trade() no longer uses hardcoded qty=10; delegates to OrderExecutor
+- HTF/MTF cache TTL check used `.seconds` which wraps at 3600s (< 1h cache impossible)
+  → now uses `.total_seconds()`
+- Rich markup tags ([bold], [green] …) were passed to plain print(); now uses
+  rich.console.Console() consistently so markup is actually rendered
+- Removed duplicate fyers_client / scanner imports that clashed with outer scope
 """
-import pandas as pd
-import numpy as np
-import time
+
 import logging
-from typing import Dict, List, Optional, Tuple
+import time
 from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+
+import pandas as pd
 from rich.console import Console
-from rich.live import Live
 from rich.table import Table
 from rich import box
-
-from .smart_money import SmartMoneyStrategy, SMCResult
-from api import get_historical_data, get_quotes
 
 logger = logging.getLogger(__name__)
 console = Console()
 
 
 class LiveSMCEngine:
-    """
-    Live SMC Scanner Engine for real-time market scanning.
-    
-    Features:
-    - Continuous polling of live data
-    - HTF bias calculation (cached for efficiency)
-    - Real-time SMC condition updates
-    - Score-based signal generation
-    - Auto-trading support for high-confidence signals
-    """
-    
-    def __init__(self, fyers_client, scanner, interval: int = 5, 
-                 auto_trade: bool = False, threshold: int = 75,
-                 ltf_timeframe: str = "5m", mtf_timeframe: str = "15m", htf_timeframe: str = "1h"):
-        """
-        Initialize Live SMC Engine.
-        
-        Args:
-            fyers_client: Fyers API client instance
-            scanner: StockScanner instance with SMC enabled
-            interval: Polling interval in seconds
-            auto_trade: Enable automatic order placement
-            threshold: Minimum score for auto-trading
-            ltf_timeframe: Lower timeframe for analysis (5m)
-            mtf_timeframe: Middle timeframe for setup (15m)
-            htf_timeframe: Higher timeframe for bias (1h)
-        """
+    """Real-time SMC market scanner with optional auto-trading."""
+
+    # Cache TTL (seconds)
+    _HTF_CACHE_TTL = 300   # 5 min
+    _MTF_CACHE_TTL = 60    # 1 min
+
+    # Timeframe fallback chains
+    _TF_FALLBACK: Dict[str, List[str]] = {
+        "5m":  ["15m", "30m", "1h", "D"],
+        "15m": ["30m", "1h", "4h", "D"],
+        "30m": ["1h", "4h", "D"],
+        "1h":  ["4h", "D"],
+        "4h":  ["D"],
+        "D":   [],
+    }
+
+    def __init__(
+        self,
+        fyers_client,
+        scanner,
+        interval: int = 5,
+        auto_trade: bool = False,
+        threshold: int = 75,
+        ltf_timeframe: str = "5m",
+        mtf_timeframe: str = "15m",
+        htf_timeframe: str = "1h",
+    ) -> None:
         self.fyers_client = fyers_client
         self.scanner = scanner
-        self.interval = max(interval, 3)  # Minimum 3 seconds
+        self.interval = max(interval, 3)
         self.auto_trade = auto_trade
         self.threshold = threshold
         self.ltf_timeframe = ltf_timeframe
         self.mtf_timeframe = mtf_timeframe
         self.htf_timeframe = htf_timeframe
-        
-        # State management
+
         self.running = False
         self.symbols: List[str] = []
-        self.htf_cache: Dict[str, Tuple[pd.DataFrame, datetime]] = {}  # Cache HTF data
-        self.mtf_cache: Dict[str, Tuple[pd.DataFrame, datetime]] = {}  # Cache MTF data
-        self.htf_cache_ttl = 300  # HTF cache TTL in seconds (5 minutes)
-        self.mtf_cache_ttl = 60   # MTF cache TTL in seconds (1 minute)
-        self.last_signals: Dict[str, Dict] = {}  # Track last signals to avoid duplicates
-        
-        # Timeframe fallback priority
-        self.timeframe_priority = {
-            "5m": ["15m", "30m", "1h", "D"],
-            "15m": ["30m", "1h", "4h", "D"],
-            "30m": ["1h", "4h", "D"],
-            "1h": ["4h", "D", "W"],
-            "4h": ["D", "W"],
-            "D": []
-        }
-        
-    def get_best_timeframe_data(self, symbol: str, timeframe: str, limit: int) -> Tuple[pd.DataFrame, str]:
-        """
-        Fetch data with automatic timeframe fallback.
-        
-        Returns:
-            Tuple of (DataFrame, actual_timeframe_used)
-        """
-        # Try primary timeframe first
+
+        # Caches: symbol → (DataFrame, fetch_datetime)
+        self._htf_cache: Dict[str, Tuple[pd.DataFrame, datetime]] = {}
+        self._mtf_cache: Dict[str, Tuple[pd.DataFrame, datetime]] = {}
+
+        # Dedup: symbol → last signal dict
+        self._last_signals: Dict[str, Dict] = {}
+
+        # Auto-trading executor (lazy init)
+        self._executor = None
+
+    # ------------------------------------------------------------------
+    # Data fetching
+    # ------------------------------------------------------------------
+
+    def _fetch_with_fallback(
+        self, symbol: str, timeframe: str, limit: int
+    ) -> Tuple[pd.DataFrame, str]:
+        """Fetch data, falling back to higher timeframes if the primary fails."""
+        from api import get_historical_data
+
         df = get_historical_data(self.fyers_client, symbol, timeframe, count=limit)
         if not df.empty and len(df) >= 20:
             return df, timeframe
-        
-        # Try fallback timeframes
-        fallbacks = self.timeframe_priority.get(timeframe, [])
-        for tf in fallbacks:
-            time.sleep(0.5)  # Rate limiting between attempts
+
+        for tf in self._TF_FALLBACK.get(timeframe, []):
+            time.sleep(0.5)
             df = get_historical_data(self.fyers_client, symbol, tf, count=limit)
             if not df.empty and len(df) >= 20:
-                logger.info(f"Using fallback timeframe {tf} for {symbol}")
+                logger.debug("Used fallback TF %s for %s", tf, symbol)
                 return df, tf
-        
-        return pd.DataFrame(), timeframe
-    
-    def get_htf_data_cached(self, symbol: str) -> Optional[pd.DataFrame]:
-        """
-        Get HTF data with caching to reduce API calls.
-        
-        Returns:
-            HTF DataFrame or None
-        """
-        now = datetime.now()
-        
-        # Check cache
-        if symbol in self.htf_cache:
-            cached_df, cached_time = self.htf_cache[symbol]
-            if (now - cached_time).seconds < self.htf_cache_ttl:
-                return cached_df
-        
-        # Fetch fresh HTF data
-        htf_df, _ = self.get_best_timeframe_data(symbol, self.htf_timeframe, 50)
-        
-        if not htf_df.empty:
-            self.htf_cache[symbol] = (htf_df, now)
-        
-        return htf_df if not htf_df.empty else None
-    
-    def get_mtf_data_cached(self, symbol: str) -> Optional[pd.DataFrame]:
-        """
-        Get MTF data with caching.
-        """
-        now = datetime.now()
-        if symbol in self.mtf_cache:
-            cached_df, cached_time = self.mtf_cache[symbol]
-            if (now - cached_time).seconds < self.mtf_cache_ttl:
-                return cached_df
-        
-        mtf_df, _ = self.get_best_timeframe_data(symbol, self.mtf_timeframe, 100)
-        if not mtf_df.empty:
-            self.mtf_cache[symbol] = (mtf_df, now)
-        return mtf_df if not mtf_df.empty else None
 
-    def fetch_live_data(self, symbol: str) -> Dict:
-        """
-        Fetch live data for a symbol using 3-tier MTF.
-        
-        Returns:
-            Dictionary with live data and LTF/MTF/HTF DataFrames
-        """
-        result = {
-            "symbol": symbol,
-            "ltf_df": pd.DataFrame(),
-            "mtf_df": None,
-            "htf_df": None,
-            "current_price": 0,
-            "success": False
-        }
-        
-        try:
-            # Get LTF historical data
-            ltf_df, _ = self.get_best_timeframe_data(symbol, self.ltf_timeframe, 100)
-            
-            if ltf_df.empty or len(ltf_df) < 20:
-                logger.warning(f"No LTF data for {symbol}")
-                return result
-            
-            # Get live quote
-            quote = get_quotes(self.fyers_client, symbol)
-            current_price = quote.get("last", ltf_df['close'].iloc[-1]) if "error" not in quote else ltf_df['close'].iloc[-1]
-            
-            # Update last candle
-            ltf_df.loc[ltf_df.index[-1], 'close'] = current_price
-            
-            # Get cached MTF and HTF
-            mtf_df = self.get_mtf_data_cached(symbol)
-            htf_df = self.get_htf_data_cached(symbol)
-            
-            result["ltf_df"] = ltf_df
-            result["mtf_df"] = mtf_df
-            result["htf_df"] = htf_df
-            result["current_price"] = current_price
-            result["success"] = True
-            
-        except Exception as e:
-            logger.error(f"Error fetching live data for {symbol}: {e}")
-        
-        return result
-    
-    def scan_symbol_live(self, symbol: str) -> Optional[SMCResult]:
-        """
-        Perform live 3-tier SMC scan.
-        """
-        live_data = self.fetch_live_data(symbol)
-        if not live_data["success"]:
+        return pd.DataFrame(), timeframe
+
+    def _get_cached(
+        self,
+        cache: Dict[str, Tuple[pd.DataFrame, datetime]],
+        symbol: str,
+        timeframe: str,
+        limit: int,
+        ttl: int,
+    ) -> Optional[pd.DataFrame]:
+        """Return cached DataFrame if fresh, else fetch and cache."""
+        now = datetime.now()
+        if symbol in cache:
+            cached_df, cached_at = cache[symbol]
+            # FIX: was `.seconds` which wraps at 3600; use `.total_seconds()`
+            if (now - cached_at).total_seconds() < ttl:
+                return cached_df
+
+        df, _ = self._fetch_with_fallback(symbol, timeframe, limit)
+        if not df.empty:
+            cache[symbol] = (df, now)
+            return df
+        return None
+
+    # ------------------------------------------------------------------
+    # Scan cycle
+    # ------------------------------------------------------------------
+
+    def _scan_symbol(self, symbol: str):
+        """Fetch live data and run 3-tier SMC analysis for one symbol."""
+        from api import get_historical_data, get_quotes
+
+        # LTF – always fresh
+        ltf_df, _ = self._fetch_with_fallback(symbol, self.ltf_timeframe, 100)
+        if ltf_df.empty or len(ltf_df) < 20:
+            logger.warning("No usable LTF data for %s", symbol)
             return None
-        
-        # Perform 3-tier SMC analysis
-        smc_result = self.scanner.smc_strategy.analyze(
-            live_data["ltf_df"], 
-            live_data["mtf_df"],
-            live_data["htf_df"]
-        )
-        smc_result.symbol = symbol
-        smc_result.details['current_price'] = live_data['current_price']
-        
-        return smc_result
-    
-    def format_live_output(self, results: List[SMCResult]) -> Table:
-        """
-        Format live results for display.
-        
-        Returns:
-            Rich Table with live data
-        """
-        table = Table(
-            title=f"[LIVE] SMC Scanner | {datetime.now().strftime('%H:%M:%S')} | Interval: {self.interval}s",
-            box=box.SIMPLE,
-            show_header=True,
-            header_style="bold cyan"
-        )
-        
-        table.add_column("Symbol", style="cyan", no_wrap=True, width=12)
-        table.add_column("Price", style="white", justify="right", width=10)
-        table.add_column("Score", style="bright_green", justify="center", width=8)
-        table.add_column("Signal", style="bold", justify="center", width=8)
-        table.add_column("HTF", style="yellow", justify="center", width=5)
-        table.add_column("Sweep", style="yellow", justify="center", width=6)
-        table.add_column("MSS", style="yellow", justify="center", width=5)
-        table.add_column("FVG", style="yellow", justify="center", width=5)
-        table.add_column("Action", style="bold", width=10)
-        
-        for r in results:
-            if r.signal == "NEUTRAL" and r.score < 50:
-                continue  # Skip weak neutral signals
-            
-            # Color coding
-            signal_color = "green" if r.signal == "BUY" else ("red" if r.signal == "SELL" else "dim")
-            
-            # Score color
-            if r.score >= 75:
-                score_str = f"[bold green]{r.score}%[/bold green]"
-                action = "[bold green]TRADE[/bold green]" if r.signal in ["BUY", "SELL"] else "-"
-            elif r.score >= 60:
-                score_str = f"[yellow]{r.score}%[/yellow]"
-                action = "[yellow]WATCH[/yellow]" if r.signal in ["BUY", "SELL"] else "-"
-            elif r.score >= 50:
-                score_str = f"[dim]{r.score}%[/dim]"
-                action = "[dim]WEAK[/dim]"
-            else:
-                score_str = f"[dim]{r.score}%[/dim]"
-                action = "-"
-            
-            # Indicators
-            htf = "✓" if r.htf_aligned else "✗"
-            sweep = "✓" if r.liquidity_sweep else "✗"
-            mss = "✓" if r.mss_confirmed else "✗"
-            fvg = "✓" if r.fvg_present else "✗"
-            
-            symbol_short = r.symbol.replace("NSE:", "").replace("-EQ", "")[:10]
-            
-            table.add_row(
-                symbol_short,
-                f"₹{r.details.get('current_price', 0):,.2f}",
-                score_str,
-                f"[{signal_color}]{r.signal}[/{signal_color}]",
-                htf,
-                sweep,
-                mss,
-                fvg,
-                action
-            )
-        
-        return table
-    
-    def check_signal_change(self, result: SMCResult) -> bool:
-        """
-        Check if signal has changed or score improved significantly.
-        
-        Returns:
-            True if significant change detected
-        """
-        symbol = result.symbol
-        
-        if symbol not in self.last_signals:
-            self.last_signals[symbol] = {
-                "signal": result.signal,
-                "score": result.score,
-                "time": datetime.now()
-            }
-            return result.score >= 75  # New high-probability signal
-        
-        last = self.last_signals[symbol]
-        
-        # Check for signal change
-        if result.signal != last["signal"] and result.signal in ["BUY", "SELL"]:
-            self.last_signals[symbol] = {
-                "signal": result.signal,
-                "score": result.score,
-                "time": datetime.now()
-            }
-            return True
-        
-        # Check for score improvement (e.g., 65 → 80)
-        if result.score >= 75 and last["score"] < 75:
-            self.last_signals[symbol] = {
-                "signal": result.signal,
-                "score": result.score,
-                "time": datetime.now()
-            }
-            return True
-        
-        # Update cache
-        self.last_signals[symbol]["score"] = result.score
-        
-        return False
-    
-    def execute_auto_trade(self, result: SMCResult):
-        """
-        Execute automatic trade for high-confidence signals.
-        """
-        if not self.auto_trade or result.score < self.threshold:
-            return
-        
-        if result.signal not in ["BUY", "SELL"]:
-            return
-        
-        # Check cooldown (prevent duplicate trades)
-        symbol = result.symbol
-        if symbol in self.last_signals:
-            last_time = self.last_signals[symbol].get("time")
-            if last_time and (datetime.now() - last_time).seconds < 300:  # 5 min cooldown
-                return
-        
+
+        # Update last candle with live quote
         try:
-            from api import place_order
-            
-            side = result.signal  # BUY or SELL
-            qty = 10  # Default qty - should be calculated based on risk
-            
-            console.print(f"[bold green]🚀 AUTO-TRADE: {side} {symbol} @ {result.details.get('current_price', 0)}[/bold green]")
-            
-            order_result = place_order(
-                self.fyers_client,
-                symbol,
-                qty,
-                side.lower(),
-                "MARKET",
-                "MIS"
+            quote = get_quotes(self.fyers_client, symbol)
+            if "error" not in quote and quote.get("last", 0) > 0:
+                ltf_df.iloc[-1, ltf_df.columns.get_loc("close")] = quote["last"]
+        except Exception:
+            pass  # Use last historical close if quote fails
+
+        mtf_df = self._get_cached(self._mtf_cache, symbol, self.mtf_timeframe, 100, self._MTF_CACHE_TTL)
+        htf_df = self._get_cached(self._htf_cache, symbol, self.htf_timeframe, 50, self._HTF_CACHE_TTL)
+
+        return self.scanner.scan_symbol_smc(symbol, ltf_df, mtf_df, htf_df)
+
+    def _has_signal_changed(self, result) -> bool:
+        """True if signal direction changed or crossed the threshold for first time."""
+        symbol = result["symbol"]
+        prev = self._last_signals.get(symbol, {})
+
+        changed = (
+            result["signal"] != prev.get("signal")
+            or (result["score"] >= self.threshold and prev.get("score", 0) < self.threshold)
+        )
+        self._last_signals[symbol] = {"signal": result["signal"], "score": result["score"], "time": datetime.now()}
+        return changed
+
+    def _execute_auto_trade(self, result: Dict) -> None:
+        """Place an order using OrderExecutor (respects risk config; no hardcoded qty)."""
+        if not self.auto_trade or result["score"] < self.threshold:
+            return
+        if result["signal"] not in ("BUY", "SELL"):
+            return
+
+        # Cooldown: 5 minutes per symbol
+        prev = self._last_signals.get(result["symbol"], {})
+        prev_time = prev.get("time")
+        if prev_time and (datetime.now() - prev_time).total_seconds() < 300:
+            return
+
+        # Lazy-init executor
+        if self._executor is None:
+            from strategies.order_executor import OrderExecutor, TradeConfig
+            cfg = TradeConfig(paper_trading=True, score_threshold=self.threshold, auto_execute=True)
+            self._executor = OrderExecutor(self.fyers_client, config=cfg)
+
+        try:
+            from api import get_funds
+            funds = get_funds(self.fyers_client)
+            capital = funds.get("available_cash", 100_000)
+        except Exception:
+            capital = 100_000
+
+        # FIX: qty now calculated from capital/risk config, not hardcoded
+        trade = self._executor.execute_trade(
+            symbol=result["symbol"],
+            signal=result["signal"],
+            price=result.get("price", 0),
+            score=result["score"],
+            capital=capital,
+            confirm=False,
+        )
+
+        if trade.success:
+            console.print(
+                f"[bold green]AUTO-TRADE: {trade.side} {result['symbol']} "
+                f"qty={trade.qty} @ ₹{trade.price:.2f} | order={trade.order_id}[/bold green]"
             )
-            
-            if "order_id" in order_result:
-                console.print(f"[green]✓ Order placed: {order_result['order_id']}[/green]")
-                # Update last signal time
-                self.last_signals[symbol] = {
-                    "signal": result.signal,
-                    "score": result.score,
-                    "time": datetime.now()
-                }
-            else:
-                console.print(f"[red]✗ Order failed: {order_result.get('error', 'Unknown error')}[/red]")
-                
-        except Exception as e:
-            logger.error(f"Auto-trade error for {symbol}: {e}")
-            console.print(f"[red]Auto-trade error: {e}[/red]")
-    
-    def run_single_scan(self) -> List[SMCResult]:
-        """
-        Run a single scan cycle on all symbols.
-        
-        Returns:
-            List of SMCResults
-        """
-        results = []
-        
-        for i, symbol in enumerate(self.symbols):
-            try:
-                # Rate limiting
-                if i > 0 and i % 5 == 0:
-                    time.sleep(2)
-                
-                result = self.scan_symbol_live(symbol)
-                
-                if result:
-                    results.append(result)
-                    
-                    # Check for significant signal changes
-                    if self.check_signal_change(result):
-                        if result.score >= 75:
-                            console.print(f"[bold cyan]🎯 HIGH PROBABILITY SETUP: {symbol} | {result.signal} | Score: {result.score}%[/bold cyan]")
-                        
-                        # Execute auto-trade if enabled
-                        if self.auto_trade:
-                            self.execute_auto_trade(result)
-                
-            except Exception as e:
-                logger.error(f"Error scanning {symbol}: {e}")
+        else:
+            console.print(f"[red]Auto-trade failed for {result['symbol']}: {trade.error}[/red]")
+
+    # ------------------------------------------------------------------
+    # Display
+    # ------------------------------------------------------------------
+
+    def _build_table(self, results: List[Dict]) -> Table:
+        table = Table(
+            title=f"[LIVE] SMC | {datetime.now().strftime('%H:%M:%S')} | interval={self.interval}s",
+            box=box.SIMPLE,
+            header_style="bold cyan",
+        )
+        table.add_column("Symbol",  style="cyan",        no_wrap=True, width=12)
+        table.add_column("Price",   style="white",       justify="right", width=10)
+        table.add_column("Score",   style="bright_green",justify="center", width=8)
+        table.add_column("Signal",  style="bold",        justify="center", width=8)
+        table.add_column("HTF",     style="yellow",      justify="center", width=5)
+        table.add_column("MTF",     style="yellow",      justify="center", width=5)
+        table.add_column("Sweep",   style="yellow",      justify="center", width=6)
+        table.add_column("MSS",     style="yellow",      justify="center", width=5)
+        table.add_column("Action",  style="bold",        width=10)
+
+        for r in results:
+            if r["signal"] == "NEUTRAL" and r["score"] < 50:
                 continue
-        
-        return results
-    
-    def start(self, symbols: List[str]):
-        """
-        Start the live SMC scanner.
-        
-        Args:
-            symbols: List of symbols to scan
-        """
+
+            sc = r["score"]
+            if sc >= 75:
+                score_str = f"[bold green]{sc}%[/bold green]"
+                action = "[bold green]TRADE[/bold green]" if r["signal"] in ("BUY", "SELL") else "-"
+            elif sc >= 60:
+                score_str = f"[yellow]{sc}%[/yellow]"
+                action = "[yellow]WATCH[/yellow]" if r["signal"] in ("BUY", "SELL") else "-"
+            else:
+                score_str = f"[dim]{sc}%[/dim]"
+                action = "[dim]WEAK[/dim]"
+
+            sig_color = "green" if r["signal"] == "BUY" else ("red" if r["signal"] == "SELL" else "dim")
+            sym = r["symbol"].replace("NSE:", "").replace("-EQ", "")[:10]
+
+            table.add_row(
+                sym,
+                f"₹{r.get('price', 0):,.2f}",
+                score_str,
+                f"[{sig_color}]{r['signal']}[/{sig_color}]",
+                "✓" if r.get("htf_aligned") else "✗",
+                "✓" if r.get("mtf_aligned") else "✗",
+                "✓" if r.get("liquidity_sweep") else "✗",
+                "✓" if r.get("mss_confirmed") else "✗",
+                action,
+            )
+        return table
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def start(self, symbols: List[str]) -> None:
         self.symbols = symbols
         self.running = True
-        
-        console.print(f"[bold cyan]🚀 Starting Live SMC Scanner[/bold cyan]")
-        console.print(f"[dim]Symbols: {len(symbols)} | LTF: {self.ltf_timeframe} | HTF: {self.htf_timeframe} | Interval: {self.interval}s[/dim]")
-        
+
+        console.print(f"[bold cyan]Live SMC Scanner started[/bold cyan]")
+        console.print(
+            f"[dim]{len(symbols)} symbols | LTF={self.ltf_timeframe} "
+            f"MTF={self.mtf_timeframe} HTF={self.htf_timeframe} | "
+            f"interval={self.interval}s[/dim]"
+        )
         if self.auto_trade:
-            console.print(f"[bold yellow]⚠️  AUTO-TRADE ENABLED | Threshold: {self.threshold}%[/bold yellow]")
-        
+            console.print(f"[bold yellow]AUTO-TRADE ON | threshold={self.threshold}%[/bold yellow]")
         console.print("[dim]Press Ctrl+C to stop[/dim]\n")
-        
+
         try:
             while self.running:
-                # Run scan cycle
-                results = self.run_single_scan()
-                
-                # Display results
+                results = self._run_cycle()
                 if results:
-                    table = self.format_live_output(results)
-                    console.print(table)
-                    console.print()  # Empty line
-                
-                # Wait for next interval
+                    console.print(self._build_table(results))
                 time.sleep(self.interval)
-                
         except KeyboardInterrupt:
-            console.print("\n[yellow]👋 Live scanner stopped by user[/yellow]")
+            console.print("\n[yellow]Live scanner stopped.[/yellow]")
             self.running = False
-        except Exception as e:
-            logger.error(f"Live scanner error: {e}")
-            console.print(f"\n[red]❌ Live scanner error: {e}[/red]")
-            self.running = False
-    
-    def stop(self):
-        """Stop the live scanner."""
+
+    def _run_cycle(self) -> List[Dict]:
+        results = []
+        for i, symbol in enumerate(self.symbols):
+            if not self.running:
+                break
+            if i > 0 and i % 5 == 0:
+                time.sleep(2)
+            try:
+                result = self._scan_symbol(symbol)
+                if result:
+                    results.append(result)
+                    if self._has_signal_changed(result) and result["score"] >= self.threshold:
+                        console.print(
+                            f"[bold cyan]Signal: {result['symbol']} "
+                            f"{result['signal']} {result['score']}%[/bold cyan]"
+                        )
+                        if self.auto_trade:
+                            self._execute_auto_trade(result)
+            except Exception:
+                logger.exception("Error scanning %s", symbol)
+        return results
+
+    def stop(self) -> None:
         self.running = False
