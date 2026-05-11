@@ -243,3 +243,19 @@ class TradingScheduler:
                 return True
             time.sleep(check_interval)
         return False
+
+
+# ------------------------------------------------------------------ module-level helpers (backward compat)
+
+def is_market_open(now: Optional[datetime] = None) -> bool:
+    """Check if Indian stock market is currently open."""
+    session = MarketSession()
+    return session.is_trading_hours(now)
+
+def wait_for_market_open(check_interval: int = 60) -> bool:
+    """Block until market opens."""
+    session = MarketSession()
+    while True:
+        if session.is_trading_hours():
+            return True
+        time.sleep(check_interval)
