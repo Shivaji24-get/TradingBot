@@ -1,136 +1,63 @@
-# =============================================================================
-# TradingBot Configuration File
-# =============================================================================
-# 
-# PURPOSE: This file controls ALL bot behavior. Edit carefully!
-# 
-# HOW TO USE:
-#   1. Fill in YOUR details (name, API keys)
-#   2. Adjust RISK settings (start conservative!)
-#   3. Set your STOCKS (default_symbols)
-#   4. Configure STRATEGY (enable/disable as needed)
-#   5. Save and run: python -m cli.main start-bot --paper
-# 
-# SAFETY FIRST:
-#   - Keep paper_trading: true until you're confident
-#   - Keep auto_trading: enabled: false until ready
-#   - Start with small risk_per_trade (0.01 = 1%)
-# 
-# DOCUMENTATION:
-#   - QUICKSTART.md - Get started in 5 minutes
-#   - USAGE_GUIDE.md - Detailed feature docs
-#   - README.md - Project overview
-# 
-# FILE SECTIONS:
-#   1. trader          - Your identity & notifications
-#   2. risk_profile    - Money management & safety limits
-#   3. trading_preferences - Symbols, timeframes, modes
-#   4. strategies      - Which strategies to run
-#   5. api            - Fyers API credentials
-#   6. alerts          - Notification settings
-# 
-# =============================================================================
-
-# =============================================================================
-# TRADER IDENTITY
-# =============================================================================
-# Your info for logs and reports. Optional but helpful.
 trader:
-  name: "Your Name"
-  email: "anumandla.shivaji@gmail.com"
-  timezone: "Asia/Kolkata"
-  
+  name: Trader
+  email: trader@example.com
+  timezone: Asia/Kolkata
   notifications:
     email_enabled: false
     telegram_enabled: false
-    telegram_bot_token: ""
-    telegram_chat_id: ""
-
-# =============================================================================
-# RISK PROFILE
-# =============================================================================
+    telegram_bot_token: ''
+    telegram_chat_id: ''
 risk_profile:
-  risk_per_trade: 0.01        # 1% risk per trade (conservative)
+  risk_per_trade: 0.02
   max_positions: 5
   max_position_value: 20000
   min_position_value: 5000
-  max_daily_loss: 0.03       # 3% daily loss limit
+  max_daily_loss: 0.05
   max_trades_per_day: 10
-  default_stop_loss_pct: 1.5
-  default_take_profit_pct: 4.5
+  default_stop_loss_pct: 2.0
+  default_take_profit_pct: 3.0
   min_risk_reward_ratio: 2.0
   max_drawdown_pct: 10.0
-
-# =============================================================================
-# TRADING PREFERENCES
-# =============================================================================
 trading_preferences:
   default_symbols:
-    # Core 6 symbols (tested and working, avoid rate limits)
-    - "NSE:NIFTY50-INDEX"     # NIFTY 50 Index
-    - "NSE:NIFTYBANK-INDEX"   # Bank Nifty Index
-    - "NSE:RELIANCE-EQ"       # Reliance Industries
-    - "NSE:TCS-EQ"            # Tata Consultancy
-    - "NSE:HDFCBANK-EQ"       # HDFC Bank
-    - "NSE:ICICIBANK-EQ"      # ICICI Bank
-    # Add more symbols gradually to avoid rate limits:
-    # - "NSE:INFY-EQ"
-    # - "NSE:SBIN-EQ"
-    # - "NSE:ITC-EQ"
-  
+  - NSE:NIFTY50-INDEX
+  - NSE:NIFTYBANK-INDEX
   market_session:
-    pre_market_start: "09:00"
-    market_open: "09:15"
-    market_close: "15:30"
-    post_market_end: "16:00"
-  
-  trading_mode: "MIS"
-  order_type: "MARKET"
-  
+    pre_market_start: 09:00
+    market_open: 09:15
+    market_close: '15:30'
+    post_market_end: '16:00'
+  trading_mode: MIS
+  order_type: MARKET
   auto_trading:
     enabled: false
     confirmation_required: true
-    min_signal_score: 60.0
+    min_signal_score: 75.0
     paper_trading: true
-  
   scanning:
     interval_seconds: 60
     use_live_data: true
     historical_lookback: 50
-
-# =============================================================================
-# STRATEGY CONFIGURATION
-# =============================================================================
 strategies:
   enabled:
-    - "smart_money"
-    - "order_block"
-    # - "fvg_detector"  # PAUSED: Hit stop loss, disabled temporarily
-  
-  # Paper trading timeframe settings
+  - smart_money
+  - order_block
   timeframe:
-    main: "1h"      # 1-hour for trend confirmation
-    entry: "5m"     # 5-minute for trade entries
-    higher: "4h"    # 4-hour for broader context
-  
+    main: 1h
+    entry: 5m
+    higher: 4h
   smart_money:
     min_pattern_size: 3
-    confidence_threshold: 0.60
+    confidence_threshold: 0.75
     require_fvg: false
     require_mss: false
-    
   order_block:
     lookback_periods: 20
     volume_threshold: 1.5
-    
   fvg_detector:
-    enabled: false   # PAUSED due to stop loss hit
+    enabled: false
     min_gap_size: 0.5
     fill_threshold: 0.3
-
-# =============================================================================
-# NOTIFICATION THRESHOLDS
-# =============================================================================
 alerts:
   on_signal_generated: true
   on_trade_executed: true
@@ -138,79 +65,54 @@ alerts:
   on_take_profit_hit: true
   on_daily_limit_reached: true
   on_error: true
-  
   quiet_hours:
-    start: "22:00"
-    end: "08:00"
-
-# =============================================================================
-# REPORTING PREFERENCES
-# =============================================================================
+    start: '22:00'
+    end: 08:00
 reporting:
   daily_report: true
   weekly_report: true
-  monthly_report: true
   export_formats:
-    - "csv"
+  - csv
   save_to_disk: true
-
-# =============================================================================
-# API CONFIGURATION
-# =============================================================================
 api:
   fyers:
-    client_id: "ID52MLOEQQ-100"           # Your Fyers client ID
-    secret_key: "Z5AI98KTZZ"              # Your Fyers secret key
-    redirect_uri: "http://127.0.0.1:5000/fyers/callback"
-    log_level: "INFO"
-  
+    client_id: ID52MLOEQQ-100
+    secret_key: Z5AI98KTZZ
+    redirect_uri: http://127.0.0.1:5000/fyers/callback
+    log_level: INFO
   rate_limits:
     quotes: 10
     orders: 5
     historical: 2
-
-# =============================================================================
-# AI & AUTOMATION (Gemini Integration)
-# =============================================================================
+fyers_app:
+  username: XA72156
+  pin: '2424'
+  mobile: '9550414039'
 ai:
   gemini:
     enabled: false
-    api_key: "${GEMINI_API_KEY}"
-    model: "gemini-1.5-flash"
-    
+    api_key: ${GEMINI_API_KEY}
+    model: gemini-1.5-flash
     features:
       explain_signals: true
       validate_signals: true
       suggest_position_size: true
       analyze_trades: true
-    
     thresholds:
-      min_confidence: 0.70
+      min_confidence: 0.7
       max_vix_for_trading: 25
-    
-    analysis:
-      include_market_context: true
-      include_sector_analysis: true
-      provide_reasoning: true
-
-# =============================================================================
-# ADVANCED SETTINGS
-# =============================================================================
 advanced:
-  log_level: "INFO"
+  log_level: INFO
   log_retention_days: 30
   structured_logging: true
-  
   retry:
     max_attempts: 3
     backoff_factor: 2.0
     max_delay_seconds: 60
-  
   circuit_breaker:
     failure_threshold: 5
     recovery_timeout: 300
     half_open_max_calls: 3
-  
   performance:
     max_workers: 4
     queue_size: 100

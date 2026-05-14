@@ -1,8 +1,8 @@
 import logging
 from fyers_apiv3 import fyersModel
-from typing import Optional
 
 logger = logging.getLogger(__name__)
+
 
 class FyersClient:
     def __init__(self, client_id: str, access_token: str, secret_key: str = ""):
@@ -11,7 +11,7 @@ class FyersClient:
         self.secret_key = secret_key
         self.fyers = None
         self._initialize()
-    
+
     def _initialize(self):
         self.fyers = fyersModel.FyersModel(
             client_id=self.client_id,
@@ -20,14 +20,14 @@ class FyersClient:
             log_path=""
         )
         logger.info("Fyers client initialized")
-    
+
     def refresh_token(self, new_token: str):
         self.access_token = new_token
         self._initialize()
-    
+
     def get_client(self):
         return self.fyers
-    
+
     def test_connection(self) -> bool:
         try:
             response = self.fyers.get_profile()

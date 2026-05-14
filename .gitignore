@@ -111,6 +111,9 @@ output/
 reports/
 batch/
 
+# Fyers API log files
+*.log
+
 # Large media files (demo GIFs etc.)
 *.mp4
 demo.gif
